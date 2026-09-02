@@ -1,0 +1,26 @@
+{
+  "name": "civic",
+  "private": true,
+  "packageManager": "pnpm@9.12.0",
+  "engines": { "node": ">=20.11" },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "pnpm --filter @civic/db generate",
+    "db:migrate": "pnpm --filter @civic/db migrate:dev",
+    "db:seed": "pnpm --filter @civic/db seed",
+    "ingest": "pnpm --filter @civic/ingest cli",
+    "extract": "pnpm --filter @civic/extract cli",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\""
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "prettier": "^3.3.3",
+    "turbo": "^2.1.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.0"
+  }
+}

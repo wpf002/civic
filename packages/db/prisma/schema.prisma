@@ -1,0 +1,329 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------------------------------------------ geography
+
+enum JurisdictionLevel {
+  FEDERAL
+  STATE
+  COUNTY
+  CITY
+  SCHOOL_DISTRICT
+  SPECIAL_DISTRICT
+}
+
+model Jurisdiction {
+  id        String            @id @default(cuid())
+  level     JurisdictionLevel
+  name      String            // "Texas", "Dallas County", "City of Dallas", "Dallas ISD"
+  ocdId     String?           @unique // Open Civic Data division id when known
+  parentId  String?
+  parent    Jurisdiction?     @relation("JurisdictionTree", fields: [parentId], references: [id])
+  children  Jurisdiction[]    @relation("JurisdictionTree")
+  offices   Office[]
+  districts District[]
+  createdAt DateTime          @default(now())
+
+  @@index([level])
+}
+
+// A district is the geographic unit a seat represents (TX HD-100, Dallas Council District 2).
+model District {
+  id             String       @id @default(cuid())
+  jurisdictionId String
+  jurisdiction   Jurisdiction @relation(fields: [jurisdictionId], references: [id])
+  name           String       // "District 2"
+  ocdId          String?      @unique
+  geoid          String?      // Census GEOID for boundary lookup
+  offices        Office[]
+
+  @@unique([jurisdictionId, name])
+}
+
+model Office {
+  id             String       @id @default(cuid())
+  jurisdictionId String
+  jurisdiction   Jurisdiction @relation(fields: [jurisdictionId], references: [id])
+  districtId     String?
+  district       District?    @relation(fields: [districtId], references: [id])
+  title          String       // "U.S. Senator", "Dallas City Council Member"
+  seatLabel      String?      // "Place 4", "Seat B"
+  termYears      Int?
+  races          Race[]
+  incumbencies   Incumbency[]
+
+  @@index([jurisdictionId])
+}
+
+// ------------------------------------------------------------------ elections
+
+enum ElectionKind {
+  GENERAL
+  PRIMARY
+  RUNOFF
+  SPECIAL
+  MUNICIPAL
+}
+
+model Election {
+  id            String       @id @default(cuid())
+  name          String       // "Dallas Municipal Election, May 2027"
+  kind          ElectionKind
+  electionDate  DateTime
+  state         String       // USPS code
+  regDeadline   DateTime?
+  earlyVoteFrom DateTime?
+  earlyVoteTo   DateTime?
+  races         Race[]
+
+  @@index([electionDate])
+}
+
+// One contest: an office in an election.
+model Race {
+  id          String        @id @default(cuid())
+  electionId  String
+  election    Election      @relation(fields: [electionId], references: [id])
+  officeId    String
+  office      Office        @relation(fields: [officeId], references: [id])
+  isPartisan  Boolean       @default(true)
+  candidacies Candidacy[]
+
+  @@unique([electionId, officeId])
+}
+
+// ------------------------------------------------------------------ people
+
+model Party {
+  id           String      @id @default(cuid())
+  name         String      @unique
+  abbreviation String      @unique
+  candidacies  Candidacy[]
+}
+
+model Candidate {
+  id            String       @id @default(cuid())
+  fullName      String
+  slug          String       @unique
+  photoUrl      String?
+  websiteUrl    String?
+  bio           String?      // plain-language, sourced, reviewed
+  externalIds   Json?        // { fec, ballotpedia, openstates, bioguide }
+  candidacies   Candidacy[]
+  incumbencies  Incumbency[]
+  positions     Position[]
+  votes         VoteRecord[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([fullName])
+}
+
+enum CandidacyStatus {
+  DECLARED
+  QUALIFIED
+  WITHDRAWN
+  WON
+  LOST
+  RUNOFF
+}
+
+model Candidacy {
+  id          String          @id @default(cuid())
+  raceId      String
+  race        Race            @relation(fields: [raceId], references: [id])
+  candidateId String
+  candidate   Candidate       @relation(fields: [candidateId], references: [id])
+  partyId     String?
+  party       Party?          @relation(fields: [partyId], references: [id])
+  status      CandidacyStatus @default(DECLARED)
+  isIncumbent Boolean         @default(false)
+  ballotOrder Int?
+
+  @@unique([raceId, candidateId])
+}
+
+// Who holds the seat now. Drives the off-cycle "My Representatives" view.
+model Incumbency {
+  id          String    @id @default(cuid())
+  officeId    String
+  office      Office    @relation(fields: [officeId], references: [id])
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+  startDate   DateTime
+  endDate     DateTime?
+
+  @@index([officeId, endDate])
+}
+
+// ------------------------------------------------------------------ issues & positions
+
+// Fixed taxonomy. Changing this is an editorial decision, not a migration convenience.
+model Issue {
+  id          String     @id @default(cuid())
+  slug        String     @unique   // "housing", "public-safety"
+  name        String
+  description String                 // neutral one-paragraph framing, reviewed
+  levels      JurisdictionLevel[]    // which levels this issue is meaningful at
+  sortOrder   Int
+  questions   QuizQuestion[]
+  positions   Position[]
+}
+
+// Where a claim came from. One row per fetched document.
+enum SourceKind {
+  CANDIDATE_WEBSITE
+  QUESTIONNAIRE
+  VOTING_RECORD
+  PUBLIC_STATEMENT
+  NEWS_INTERVIEW
+  DEBATE_TRANSCRIPT
+  SOCIAL_POST
+  OFFICIAL_FILING
+  OTHER
+}
+
+model Source {
+  id          String     @id @default(cuid())
+  kind        SourceKind
+  url         String
+  title       String?
+  publisher   String?
+  publishedAt DateTime?
+  fetchedAt   DateTime   @default(now())
+  contentHash String     // sha256 of normalized text; dedup key
+  rawPath     String?    // object storage key for the archived copy
+  evidence    Evidence[]
+
+  @@unique([url, contentHash])
+}
+
+// The exact passage a position rests on. Never paraphrased.
+model Evidence {
+  id         String    @id @default(cuid())
+  sourceId   String
+  source     Source    @relation(fields: [sourceId], references: [id])
+  quote      String    // verbatim, <= ~60 words
+  locator    String?   // page/paragraph/timestamp
+  positions  Position[]
+}
+
+enum Stance {
+  STRONG_SUPPORT
+  SUPPORT
+  MIXED
+  OPPOSE
+  STRONG_OPPOSE
+  NO_STATED_POSITION
+}
+
+enum PositionStatus {
+  DRAFT        // extracted, unreviewed
+  IN_REVIEW
+  PUBLISHED
+  REJECTED
+  SUPERSEDED
+}
+
+// candidate x issue. Immutable once PUBLISHED; changes create a new row with supersedesId.
+model Position {
+  id           String         @id @default(cuid())
+  candidateId  String
+  candidate    Candidate      @relation(fields: [candidateId], references: [id])
+  issueId      String
+  issue        Issue          @relation(fields: [issueId], references: [id])
+  stance       Stance
+  summary      String         // <= 2 sentences, plain language, no adjectives about the candidate
+  confidence   Float          // 0..1 from extractor; reviewer may override
+  status       PositionStatus @default(DRAFT)
+  evidence     Evidence[]
+  extractedBy  String?        // model id via Flint, or "human"
+  extractRunId String?
+  reviewedBy   String?
+  reviewedAt   DateTime?
+  publishedAt  DateTime?
+  supersedesId String?        @unique
+  supersedes   Position?      @relation("PositionHistory", fields: [supersedesId], references: [id])
+  supersededBy Position?      @relation("PositionHistory")
+  capturedAt   DateTime       @default(now())
+
+  @@index([candidateId, issueId, status])
+}
+
+// Roll-call votes for incumbents. Ingested, not extracted.
+model VoteRecord {
+  id          String    @id @default(cuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+  body        String    // "U.S. House", "Texas Senate", "Dallas City Council"
+  billId      String
+  billTitle   String
+  vote        String    // YEA | NAY | PRESENT | ABSENT
+  votedAt     DateTime
+  sourceUrl   String
+  issueSlugs  String[]  // tagged by extractor, reviewed
+
+  @@unique([candidateId, billId])
+  @@index([candidateId, votedAt])
+}
+
+// ------------------------------------------------------------------ quiz
+
+model QuizQuestion {
+  id        String  @id @default(cuid())
+  issueId   String
+  issue     Issue   @relation(fields: [issueId], references: [id])
+  prompt    String  // neutral wording, reviewed
+  sortOrder Int
+  active    Boolean @default(true)
+}
+
+// ------------------------------------------------------------------ review & ops
+
+enum ReviewTaskKind {
+  POSITION
+  VOTE_TAGGING
+  CANDIDATE_PROFILE
+  SOURCE_FLAG
+}
+
+model ReviewTask {
+  id         String         @id @default(cuid())
+  kind       ReviewTaskKind
+  targetId   String
+  reason     String         // "model disagreement", "low confidence", "user report"
+  assignedTo String?
+  resolvedAt DateTime?
+  resolution String?
+  createdAt  DateTime       @default(now())
+
+  @@index([kind, resolvedAt])
+}
+
+model ExtractRun {
+  id          String   @id @default(cuid())
+  startedAt   DateTime @default(now())
+  finishedAt  DateTime?
+  models      String[] // which models Flint routed to
+  sourceCount Int      @default(0)
+  draftCount  Int      @default(0)
+  flaggedCount Int     @default(0)
+  costCents   Int      @default(0)
+}
+
+// Public user reports of wrong/missing data. No accounts; rate-limited by IP hash.
+model UserReport {
+  id         String   @id @default(cuid())
+  targetType String   // "position" | "candidate"
+  targetId   String
+  message    String
+  ipHash     String
+  createdAt  DateTime @default(now())
+  handledAt  DateTime?
+}
