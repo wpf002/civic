@@ -1,5 +1,5 @@
 import { ExtractionOutputSchema, type ExtractedPosition } from "@civic/core";
-import { flintComplete } from "./flint.js";
+import { complete, type CompleteFn } from "./llm.js";
 import { EXTRACT_SYSTEM } from "./prompts/extract-positions.js";
 
 export interface ExtractInput {
@@ -14,22 +14,29 @@ export interface ExtractOutcome {
   costCents: number;
 }
 
-/** One model, one source. Validates quotes against the source text before returning. */
-export async function extractOnce(input: ExtractInput, model?: string): Promise<ExtractOutcome> {
-  const res = await flintComplete<unknown>({
-    task: "civic.extract_positions",
-    ...(model ? { models: [model] } : {}),
+/**
+ * One model, one source. Validates quotes against the source text before returning.
+ * `fn` is injectable so tests can replay recorded model output without a network call.
+ */
+export async function extractOnce(
+  input: ExtractInput,
+  model: string,
+  fn: CompleteFn = complete,
+): Promise<ExtractOutcome> {
+  const res = await fn({
+    model,
     system: EXTRACT_SYSTEM,
     input: `ISSUES: ${input.issueSlugs.join(", ")}\n\nDOCUMENT:\n${input.sourceText}`,
-    jsonSchema: { type: "object" }, // Flint enforces the real schema by task id
+    schema: ExtractionOutputSchema,
   });
-  const parsed = ExtractionOutputSchema.safeParse(res.output);
-  if (!parsed.success) throw new Error(`extractor returned invalid shape: ${parsed.error.message}`);
 
   const positions: ExtractedPosition[] = [];
   const rejected: ExtractOutcome["rejected"] = [];
-  for (const p of parsed.data.positions) {
-    if (!input.issueSlugs.includes(p.issueSlug)) { rejected.push({ position: p, reason: "unknown issue" }); continue; }
+  for (const p of res.output.positions) {
+    if (!input.issueSlugs.includes(p.issueSlug)) {
+      rejected.push({ position: p, reason: "unknown issue" });
+      continue;
+    }
     if (p.stance !== "NO_STATED_POSITION" && !input.sourceText.includes(p.quote)) {
       rejected.push({ position: p, reason: "quote not found verbatim in source" });
       continue;
@@ -41,11 +48,12 @@ export async function extractOnce(input: ExtractInput, model?: string): Promise<
 
 /**
  * Two independent models. Agreement on stance => DRAFT with min confidence.
- * Disagreement or either NO_STATED => ReviewTask. This is the Trident pattern, inlined.
+ * Disagreement or either NO_STATED => ReviewTask.
  */
 export function reconcile(a: ExtractOutcome, b: ExtractOutcome) {
   const byIssue = (o: ExtractOutcome) => new Map(o.positions.map((p) => [p.issueSlug, p]));
-  const ma = byIssue(a), mb = byIssue(b);
+  const ma = byIssue(a);
+  const mb = byIssue(b);
   const agreed: ExtractedPosition[] = [];
   const flagged: Array<{ issueSlug: string; a?: ExtractedPosition; b?: ExtractedPosition }> = [];
   for (const slug of new Set([...ma.keys(), ...mb.keys()])) {

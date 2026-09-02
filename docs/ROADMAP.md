@@ -2,7 +2,7 @@
 
 Issue-first voter guide. A user picks an issue and sees where every candidate on their ballot stands, with the exact quote and source. Built for young and first-time voters. Nonpartisan by mechanism, not by claim.
 
-Repo: `wpf002/civic`. Stack: TypeScript, pnpm, Turborepo, Next.js, Fastify, Prisma, Postgres, Railway. AI calls go through Flint. Multi-model extraction cross-checks use the Trident pattern.
+Repo: `wpf002/civic`. Stack: TypeScript, pnpm, Turborepo, Next.js, Fastify, Prisma, Postgres, Railway. Model calls go through the seam in `packages/extract/src/llm.ts` (Anthropic API). Extraction is cross-checked by two independent models.
 
 ---
 
@@ -27,7 +27,7 @@ Paste these into `CLAUDE.md` at the repo root.
 
 ```
 - Stack is fixed: TypeScript, pnpm, Turborepo, Next.js (app router), Fastify, Prisma, Postgres, Railway. Do not introduce Go, Python, Rust, GraphQL, tRPC, Supabase, Firebase, Drizzle, or a second ORM.
-- All model calls go through @civic/extract/src/flint.ts. Never import an AI vendor SDK anywhere in this repo.
+- All model calls go through @civic/extract/src/llm.ts. That is the only file allowed to import an AI vendor SDK; no-vendor-sdk.test.ts enforces it.
 - Position rows are immutable once PUBLISHED. Corrections create a new row with supersedesId. Never UPDATE stance/summary/evidence on a PUBLISHED row.
 - Only PUBLISHED positions are readable from /v1. Enforce in the query, not the UI.
 - Every Position needs >= 1 Evidence row with a verbatim quote that passes exact substring match against the archived source text. Extractor output that fails this check is rejected, never stored.
@@ -94,7 +94,7 @@ civic/
     db/             Prisma schema, client, seed (issue taxonomy + parties)
     core/           Stance scale, deterministic matcher, extractor output schemas (zod)
     ingest/         Source adapters (openstates, congress, fec, manual CSV). Produce Sources, never Positions
-    extract/        Flint client, extraction prompt, two-model reconcile, review queue writer
+    extract/        Model seam (llm.ts), extraction prompt, two-model reconcile, review queue writer
   data/manual/      Per-election CSVs for races with no API
   docs/             EDITORIAL_POLICY.md, TAXONOMY_CHANGELOG.md
 ```
@@ -123,12 +123,12 @@ No accounts. No comments. No inferred positions. No "we think." If a candidate h
 
 ## How positions get in
 1. `ingest` pulls candidate lists and source documents (sites, questionnaires, votes, transcripts)
-2. `extract` runs each source through two models via Flint. Agreement → DRAFT. Disagreement → review queue
+2. `extract` runs each source through two independent models. Agreement → DRAFT. Disagreement → review queue
 3. A human publishes. Every published position has a verbatim quote that string-matches the archived source
 4. Corrections supersede; history is public
 
 ## Stack
-TypeScript · pnpm · Turborepo · Next.js · Fastify · Prisma · Postgres · Railway · Flint (AI seam)
+TypeScript · pnpm · Turborepo · Next.js · Fastify · Prisma · Postgres · Railway · Anthropic API
 
 ## Dev
 pnpm install
@@ -204,7 +204,7 @@ Answer these before any app code past the bootstrap.
 
 ### Phase 2 — Extraction pipeline (4 weeks)
 
-- Flint task `civic.extract_positions` registered with the zod schema from `@civic/core`.
+- Extraction constrained server-side to `ExtractionOutputSchema` from `@civic/core` via structured outputs.
 - `extract run --all-unprocessed`: for each Source, `extractOnce` with model A and model B, `reconcile`, write agreed → Position DRAFT, flagged → ReviewTask. Record ExtractRun with cost.
 - Quote validation is the hard gate. Failed quotes are logged with the source and never stored.
 - Vote tagging: `civic.tag_votes` maps VoteRecord.billTitle → issueSlugs, always through review.
@@ -258,7 +258,7 @@ The business dies in odd years unless there's a reason to come back.
 - Sources: add VOTE411 (LWV) questionnaire adapter, Ballotpedia survey adapter, debate transcript ingestion.
 - Native apps: only if pilot share-rate data says push notifications would move retention. Otherwise PWA + add-to-homescreen.
 - Registration: VoteAmerica or Rock the Vote embed. No data passes through Civic.
-- Chatbot: RAG over the Position table only, via Flint. Answers cite Position IDs. Refuses anything not in the table. Not before this phase.
+- Chatbot: RAG over the Position table only, through the same seam. Answers cite Position IDs. Refuses anything not in the table. Not before this phase.
 - Team: 2-3 part-time researchers (poli-sci students) on the review queue. Budget it.
 
 **Acceptance:** ≥ 90% of Texas state legislative candidates have ≥ 5 published positions by T-6 weeks before the March primary. Review queue SLA < 72h. Chatbot hallucination rate 0 on a 200-question eval (measured as "cited a position that doesn't exist").
@@ -267,7 +267,7 @@ The business dies in odd years unless there's a reason to come back.
 
 ## 7. Cross-cutting workstreams
 
-**Testing.** Matcher: property tests (monotonic in agreement, permutation-invariant). Extractor: fixture sources with expected outputs, run in CI without model calls by replaying recorded Flint responses. API: contract tests that `/v1` never returns a non-PUBLISHED position. Web: Playwright for issue → candidate → quiz → card.
+**Testing.** Matcher: property tests (monotonic in agreement, permutation-invariant). Extractor: fixture sources with expected outputs, run in CI without model calls by injecting a recorded `CompleteFn` into `extractOnce`. API: contract tests that `/v1` never returns a non-PUBLISHED position. Web: Playwright for issue → candidate → quiz → card.
 
 **Security.** Admin routes behind real auth before the pilot (Clerk or Auth.js, admin-only, no public sign-up). Rate limits on `/match` and `/report`. CSP, no third-party scripts except analytics. Archived sources are read-only. Your offsec background is relevant here: assume campaigns will try to poison sources (edit their site the day before freeze, submit fake corrections). ContentHash + freeze + supersede history is the defense; document it.
 
@@ -292,7 +292,7 @@ Users pay nothing. Options, in order of realism:
 
 Not ads. Ads on a political app is a bias story waiting to happen.
 
-Phase 0 through pilot runs on your time plus maybe $5-10K (researchers, designer, Flint spend). 2028 needs grant or license revenue to fund researchers.
+Phase 0 through pilot runs on your time plus maybe $5-10K (researchers, designer, model spend). 2028 needs grant or license revenue to fund researchers.
 
 ---
 
@@ -315,5 +315,5 @@ Phase 0 through pilot runs on your time plus maybe $5-10K (researchers, designer
 1. Run bootstrap, push, Railway up, migrations applied.
 2. Write `data/manual/2027-05-dallas/SOURCES.md` from the 2025 Dallas municipal cycle as a proxy.
 3. Hand-label 5 candidate sites.
-4. Wire `extractOnce` to Flint and run the fidelity test.
+4. Set ANTHROPIC_API_KEY and run the fidelity test through `extractOnce`.
 5. Read the number. Decide.

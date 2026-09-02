@@ -13,12 +13,12 @@ No accounts. No comments. No inferred positions. No "we think." If a candidate h
 
 ## How positions get in
 1. `ingest` pulls candidate lists and source documents (sites, questionnaires, votes, transcripts)
-2. `extract` runs each source through two models via Flint. Agreement → DRAFT. Disagreement → review queue
+2. `extract` runs each source through two independent models. Agreement → DRAFT. Disagreement → review queue
 3. A human publishes. Every published position has a verbatim quote that string-matches the archived source
 4. Corrections supersede; history is public
 
 ## Stack
-TypeScript · pnpm · Turborepo · Next.js · Fastify · Prisma · Postgres · Railway · Flint (AI seam)
+TypeScript · pnpm · Turborepo · Next.js · Fastify · Prisma · Postgres · Railway · Anthropic API
 
 ## Dev
 ```bash

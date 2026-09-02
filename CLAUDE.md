@@ -3,7 +3,7 @@
 Issue-first voter guide. The product is the `Position` table: `candidate × issue` with stance, summary, verbatim quote, source URL. Everything the user sees is a view over it.
 
 - Stack is fixed: TypeScript, pnpm, Turborepo, Next.js (app router), Fastify, Prisma, Postgres, Railway. Do not introduce Go, Python, Rust, GraphQL, tRPC, Supabase, Firebase, Drizzle, or a second ORM.
-- All model calls go through `packages/extract/src/flint.ts`. Never import an AI vendor SDK anywhere in this repo.
+- All model calls go through `packages/extract/src/llm.ts`. That is the only file allowed to import an AI vendor SDK; `no-vendor-sdk.test.ts` enforces it. Never import `@anthropic-ai/sdk` anywhere else.
 - Position rows are immutable once PUBLISHED. Corrections create a new row with `supersedesId`. Never UPDATE stance/summary/evidence on a PUBLISHED row.
 - Only PUBLISHED positions are readable from `/v1`. Enforce in the query, not the UI.
 - Every Position needs >= 1 Evidence row with a verbatim quote that passes exact substring match against the archived source text. Extractor output that fails this check is rejected, never stored.
