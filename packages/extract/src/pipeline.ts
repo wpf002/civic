@@ -1,4 +1,4 @@
-import { ExtractionOutputSchema, type ExtractedPosition } from "@civic/core";
+import { ExtractionOutputSchema, findVerbatim, type ExtractedPosition } from "@civic/core";
 import { complete, type CompleteFn } from "./llm.js";
 import { EXTRACT_SYSTEM } from "./prompts/extract-positions.js";
 
@@ -37,11 +37,17 @@ export async function extractOnce(
       rejected.push({ position: p, reason: "unknown issue" });
       continue;
     }
-    if (p.stance !== "NO_STATED_POSITION" && !input.sourceText.includes(p.quote)) {
+    if (p.stance === "NO_STATED_POSITION") {
+      positions.push(p);
+      continue;
+    }
+    const match = findVerbatim(input.sourceText, p.quote);
+    if (!match) {
       rejected.push({ position: p, reason: "quote not found verbatim in source" });
       continue;
     }
-    positions.push(p);
+    // Store the archived source's own span, never the model's rendering of it.
+    positions.push({ ...p, quote: match.quote });
   }
   return { model: res.model, positions, rejected, costCents: res.costCents };
 }

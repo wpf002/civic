@@ -74,7 +74,16 @@ export type CompleteFn = <T>(req: CompleteRequest<T>) => Promise<Completion<T>>;
 let client: Anthropic | undefined;
 function getClient(): Anthropic {
   // Lazy so importing this module never requires credentials (tests, typecheck, CLI --help).
-  client ??= new Anthropic();
+  //
+  // An identity-linked key is not bound to one workspace, so the API rejects it
+  // with a 400 unless each request names the workspace it acts in. The SDK reads
+  // ANTHROPIC_WORKSPACE_ID on its own only for OAuth and federated credentials —
+  // on the API-key path we have to send the header ourselves. A workspace-scoped
+  // key carries its own workspace, so leaving the variable unset is correct there.
+  const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID;
+  client ??= new Anthropic(
+    workspaceId ? { defaultHeaders: { "anthropic-workspace-id": workspaceId } } : {},
+  );
   return client;
 }
 

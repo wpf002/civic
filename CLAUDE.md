@@ -6,7 +6,7 @@ Issue-first voter guide. The product is the `Position` table: `candidate × issu
 - All model calls go through `packages/extract/src/llm.ts`. That is the only file allowed to import an AI vendor SDK; `no-vendor-sdk.test.ts` enforces it. Never import `@anthropic-ai/sdk` anywhere else.
 - Position rows are immutable once PUBLISHED. Corrections create a new row with `supersedesId`. Never UPDATE stance/summary/evidence on a PUBLISHED row.
 - Only PUBLISHED positions are readable from `/v1`. Enforce in the query, not the UI.
-- Every Position needs >= 1 Evidence row with a verbatim quote that passes exact substring match against the archived source text. Extractor output that fails this check is rejected, never stored.
+- Every Position needs >= 1 Evidence row whose quote is a verbatim span of the archived source: same words, same order, same punctuation. The match ignores whitespace only, because sources are hard-wrapped and unwrapping alters nothing; `findVerbatim` in `packages/core` then stores the source's own span, so no model output ever reaches `Evidence.quote`. Extractor output that fails this check is rejected, never stored.
 - The matcher (`packages/core/src/match.ts`) is deterministic and has no I/O. Same inputs, same output, always.
 - Quiz answers are never persisted. `/v1/match` is stateless. No analytics event may contain answer values.
 - NO_STATED_POSITION is a real value and is shown to users as "no stated position." Never fill it from party, endorsements, or other candidates.

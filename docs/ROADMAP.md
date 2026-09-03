@@ -30,7 +30,7 @@ Paste these into `CLAUDE.md` at the repo root.
 - All model calls go through @civic/extract/src/llm.ts. That is the only file allowed to import an AI vendor SDK; no-vendor-sdk.test.ts enforces it.
 - Position rows are immutable once PUBLISHED. Corrections create a new row with supersedesId. Never UPDATE stance/summary/evidence on a PUBLISHED row.
 - Only PUBLISHED positions are readable from /v1. Enforce in the query, not the UI.
-- Every Position needs >= 1 Evidence row with a verbatim quote that passes exact substring match against the archived source text. Extractor output that fails this check is rejected, never stored.
+- Every Position needs >= 1 Evidence row whose quote is a verbatim span of the archived source: same words, same order, same punctuation. The match ignores whitespace only, because sources are hard-wrapped and unwrapping alters nothing; `findVerbatim` in `packages/core` then stores the source's own span, so no model output ever reaches `Evidence.quote`. Extractor output that fails this check is rejected, never stored.
 - The matcher (@civic/core/src/match.ts) is deterministic and has no I/O. Same inputs, same output, always.
 - Quiz answers are never persisted. /v1/match is stateless. No analytics event may contain answer values.
 - NO_STATED_POSITION is a real value and is shown to users as "no stated position." Never fill it from party, endorsements, or other candidates.
@@ -166,7 +166,7 @@ ReviewTask, ExtractRun, UserReport (ops)
 Decisions locked:
 
 - **Position is append-only after publish.** `supersedesId` chain is the audit trail.
-- **Evidence is verbatim.** Quote ≤ ~60 words, must substring-match the archived source text. Extractor output failing this is dropped, not stored.
+- **Evidence is verbatim.** Quote ≤ ~60 words, matched against the archived source ignoring whitespace only; the stored quote is the source's own span, not the model's string. Extractor output failing this is dropped, not stored.
 - **Source has contentHash.** Same URL re-fetched with changed content is a new Source. Positions point at the version they came from.
 - **Stance is a 5-point scale plus NO_STATED_POSITION.** The matcher maps the five to −2..2 and skips NO_STATED entirely. Coverage is reported separately so a candidate with one position never outranks one with twelve.
 - **Issues carry `levels[]`.** "Foreign policy" doesn't show on a school board race. "Zoning" doesn't show on a Senate race.
