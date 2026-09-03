@@ -5,7 +5,7 @@ services:
       POSTGRES_USER: civic
       POSTGRES_PASSWORD: civic
       POSTGRES_DB: civic
-    ports: ["5433:5432"]   # 5432 is often taken by a native local Postgres
+    ports: ["55432:5432"]   # 5432-5439 are crowded on dev machines; stay out of that range
     volumes: ["pgdata:/var/lib/postgresql/data"]
 volumes:
   pgdata:

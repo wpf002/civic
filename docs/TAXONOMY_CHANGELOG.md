@@ -32,3 +32,31 @@ vote differently). Descriptions are empty and must be written before the pilot.
 | tech-privacy-ai | Technology, Privacy & AI | state, federal |
 | foreign-policy-defense | Foreign Policy & Defense | federal |
 | local-development-zoning | Development & Zoning | city, county, school district |
+
+## 0002 — Descriptions written; taxonomy unchanged (2026-09-03)
+
+No issue was added, removed, renamed, or re-masked. All 20 descriptions, empty since
+entry 0001, are now written.
+
+Process, because the roadmap's Phase 0 acceptance requires review by someone who would
+vote differently: each paragraph was drafted, then read by two adversarial reviewers —
+one instructed to find framing that concedes a conservative premise, one to find framing
+that concedes a progressive premise, both quoting the exact words they objected to. An
+editor revised against both reads under a fixed rule: an objection that the text uses one
+side's coined term is honored; an objection that the text should also assert the
+reviewer's preferred claim is rejected, because descriptions assert nothing. A final pass
+unified voice across the set.
+
+All 20 paragraphs changed. On nine issues — housing, taxes, reproductive rights, public
+safety, criminal justice, guns, civil rights, climate, and voting — both reviewers
+objected to the *same* clause from opposite directions, which is the signal that the
+sentence was describing the dispute rather than the decision. Those were rewritten to name
+what the office actually decides.
+
+A representative fix: `guns` originally listed only restrictions imposed on a lawful
+owner, so the decision set itself carried a premise before any candidate's stance was
+shown. It now names the decisions — what checks happen before a sale, whether a permit is
+required to carry, when a court may remove firearms and on what proof — without implying a
+direction.
+
+Still open for Phase 0: a human reader, not a model, has to sign off on these.
