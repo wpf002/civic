@@ -5,8 +5,8 @@
   "type": "module",
   "main": "./src/index.ts",
   "scripts": {
-    "cli": "tsx src/cli.ts",
-    "test": "vitest run --passWithNoTests",
+    "cli": "dotenv -e ../../.env -- tsx src/cli.ts",
+    "test": "dotenv -e ../../.env -- vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -14,11 +14,13 @@
     "@civic/db": "workspace:*",
     "cheerio": "^1.0.0",
     "commander": "^12.1.0",
-    "undici": "^6.19.8"
+    "undici": "^6.19.8",
+    "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
     "tsx": "^4.19.1",
     "vitest": "^2.1.0",
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "dotenv-cli": "^7.4.2"
   }
 }
