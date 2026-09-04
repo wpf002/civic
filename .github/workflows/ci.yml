@@ -40,3 +40,17 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
+
+      # End-to-end against the fixture. The suite asserts things a unit test cannot:
+      # that the quiz posts nothing anywhere, that silence renders at full body size,
+      # and that no page scrolls sideways on a phone.
+      - run: pnpm --filter @civic/web exec playwright install --with-deps chromium
+      - name: start api and web
+        run: |
+          pnpm --filter @civic/api start > /tmp/api.log 2>&1 &
+          pnpm --filter @civic/web start > /tmp/web.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf localhost:4000/health >/dev/null && break; sleep 1; done
+          for i in $(seq 1 60); do curl -sf localhost:3007 >/dev/null && break; sleep 1; done
+      - run: pnpm --filter @civic/web exec playwright test
+      - if: failure()
+        run: tail -50 /tmp/api.log /tmp/web.log

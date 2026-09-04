@@ -1,0 +1,23 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": { "builder": "NIXPACKS" },
+  "deploy": { "restartPolicyType": "NEVER" },
+  "_comment": [
+    "Cron schedules are set per-service in the Railway dashboard; this file documents",
+    "the intended commands so they are versioned rather than living only in a UI.",
+    "All times UTC. The filing deadline is a Texas date, so never let a cron boundary",
+    "decide a legal one — the calendar generator owns the dates.",
+    "",
+    "ingest:watch      15 11 * * *   (15 11,23 * * * from 2027-07-10 to 2027-08-30)",
+    "  pnpm --filter @civic/ingest cli ingest --adapter dallas-isd --election 2027-11-dallas --date 2027-11-02",
+    "",
+    "ingest:calendar   0 12 * * 1",
+    "  pnpm --filter @civic/ingest cli calendar --year 2027",
+    "",
+    "ingest:heartbeat  0 * * * *",
+    "  pnpm --filter @civic/ingest cli heartbeat",
+    "  Exits non-zero when a job has not run. This exists because Railway documents no",
+    "  cron retry: a job that never fires produces no error, no log line and no alert,",
+    "  and during the filing window a silently skipped day is a candidate never seen."
+  ]
+}

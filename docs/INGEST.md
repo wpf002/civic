@@ -296,19 +296,33 @@ source, and is the denominator every roster-completeness check runs against. It 
 
 | Piece | State |
 |---|---|
-| `tx-uniform-dates.ts` | Done. Pure function, 9 tests. `pnpm --filter @civic/ingest cli calendar --year 2027` |
+| `tx-uniform-dates.ts` | Done. Pure function, 9 tests. `cli calendar --year 2027` |
 | `districts.ts` | Done, verified live. `cli districts --address "1500 Marilla St, Dallas, TX"` |
 | `roster.ts` — diff + shrink guard | Done, 14 tests |
-| `dallas-isd.ts` | Done, 10 tests against checked-in copies of the live pages. `cli roster --adapter dallas-isd --election 2026-05-02` returns 5 real candidates across 3 trustee districts |
-| Schema — `IngestRun`, `WatchTarget`, `RosterSnapshot`, `RosterDiff`, `SeatUpForElection`, candidacy lifecycle | Done, migrated |
-| `dallas-city-secretary.ts` | Not started. The other 15 contests, and the harder half |
-| Railway cron wiring | Not started |
-| Writing accepted rosters into `Candidacy` | Not started — deliberately. The review surface has to exist first |
+| `dallas-isd.ts` | Done, 10 tests. `cli roster --adapter dallas-isd --election 2026-05-02` returns 5 real candidates |
+| `dallas-city-secretary.ts` | Done, 13 tests against the real 2025 filings and ballot order |
+| `run.ts` — snapshot, diff, persist | Done, 7 tests against the database |
+| Review console (`/admin`, `/admin/*` API) | Done, 17 API tests. A removal cannot be accepted without a document |
+| `pipeline-db.ts` — extraction to DRAFT | Done, 13 tests with a recorded model. Live run: 11 drafts, 1 flagged, 5.17c |
+| Cron commands + heartbeat | Done. `cli ingest`, `cli heartbeat`; schedules documented in `railway.ingest.json` |
+| Railway cron *wiring* | Not done — the schedules exist as commands and documentation, not as configured jobs |
+| `SeatUpForElection` rows for 2027 | Not done, and cannot be: which seats are up is set by resolution and has to be entered by a human with a citation |
 
-The CLI deliberately **prints and does not write**. Nothing in this package can create a
-`Candidacy` yet, because the human acceptance step it depends on is not built. An
-adapter that could write before there was somewhere to review its output would make the
-shrink guard advisory, which is the one thing it must never be.
+### The loop, end to end
+
+    cli ingest --adapter dallas-isd --election 2027-11-dallas --date 2027-11-02
+      → snapshot written, diff computed
+      → additive        : applied, candidacies created
+      → anything else   : QUARANTINED, ReviewTask opened, previous roster stays live
+
+    /admin
+      → accept a removal without a document  → 422, with the reason
+      → accept with the document             → candidacy marked WITHDRAWN, artifact recorded,
+                                               row never deleted
+
+    cli heartbeat
+      → exits non-zero when a scheduled job has not run. Railway documents no cron
+        retry, so a job that never fires produces no error anywhere else.
 
 ### What running it against the pilot does today
 
