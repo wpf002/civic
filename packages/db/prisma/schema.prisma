@@ -73,7 +73,8 @@ enum ElectionKind {
 
 model Election {
   id            String       @id @default(cuid())
-  name          String       // "Dallas Municipal Election, May 2027"
+  slug          String       @unique // "2027-11-dallas" - the /e/[election] route segment
+  name          String       // "Dallas Municipal Election, November 2027"
   kind          ElectionKind
   electionDate  DateTime
   state         String       // USPS code
@@ -118,6 +119,7 @@ model Candidate {
   candidacies   Candidacy[]
   incumbencies  Incumbency[]
   positions     Position[]
+  sources       Source[]
   votes         VoteRecord[]
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
@@ -144,6 +146,7 @@ model Candidacy {
   party       Party?          @relation(fields: [partyId], references: [id])
   status      CandidacyStatus @default(DECLARED)
   isIncumbent Boolean         @default(false)
+  isCertified Boolean         @default(false) // filing recorded != certified onto the ballot
   ballotOrder Int?
 
   @@unique([raceId, candidateId])
@@ -189,38 +192,64 @@ enum SourceKind {
   OTHER
 }
 
+// Ranked by how directly the source speaks for the candidate. Lower is stronger.
+// Adapted from euandi's seven source types and Vote Compass's six-level ladder: the
+// tier is an editorial policy applied by the extractor, not a judgement the model makes.
+enum SourceTier {
+  OFFICIAL_RECORD   // 1 - roll-call votes, filings, sworn statements
+  CAMPAIGN_PLATFORM // 2 - the candidate's own published platform
+  QUESTIONNAIRE     // 3 - answers the candidate wrote for a guide
+  CANDIDATE_SPEECH  // 4 - forum, debate, interview, speech: their words, someone else's venue
+  CANDIDATE_SOCIAL  // 5 - their account, unedited but least deliberate
+  THIRD_PARTY       // 6 - reported speech. Weakest; never sufficient alone for STRONG_*
+}
+
 model Source {
   id          String     @id @default(cuid())
   kind        SourceKind
+  tier        SourceTier
   url         String
   title       String?
   publisher   String?
-  publishedAt DateTime?
-  fetchedAt   DateTime   @default(now())
+  publishedAt DateTime?  // when the source itself was published
+  capturedAt  DateTime   @default(now()) // when we archived it; the only date that makes the substring check auditable
   contentHash String     // sha256 of normalized text; dedup key
-  rawPath     String?    // object storage key for the archived copy
+  rawPath     String?    // object storage key for the archived original
+  text        String     // normalized plain text. The substring gate runs against this exact string.
+  // Which candidate's record this document belongs to. Set even when the document
+  // yields no position, so a NO_STATED_POSITION can prove what was searched.
+  candidateId String?
+  candidate   Candidate? @relation(fields: [candidateId], references: [id])
   evidence    Evidence[]
 
   @@unique([url, contentHash])
+  @@index([candidateId, capturedAt])
 }
 
 // The exact passage a position rests on. Never paraphrased.
 model Evidence {
-  id         String    @id @default(cuid())
-  sourceId   String
-  source     Source    @relation(fields: [sourceId], references: [id])
-  quote      String    // verbatim, <= ~60 words
-  locator    String?   // page/paragraph/timestamp
-  positions  Position[]
+  id        String @id @default(cuid())
+  sourceId  String
+  source    Source @relation(fields: [sourceId], references: [id])
+  quote     String // verbatim span of Source.text, byte-exact. Never the model's rendering.
+  // Offsets of the quote within Source.text. Let the UI show the quote inside its
+  // surrounding context, which is what survives a campaign's challenge; a bare span
+  // proves the words exist but not that they were about this.
+  startOffset    Int
+  endOffset      Int
+  locator        String? // page or paragraph
+  mediaTimestamp String? // "01:12:44" - forum video is where most municipal stances live
+  positions      Position[]
 }
 
 enum Stance {
   STRONG_SUPPORT
   SUPPORT
-  MIXED
+  MIXED              // holds both sides, or commits conditionally. A real answer.
   OPPOSE
   STRONG_OPPOSE
-  NO_STATED_POSITION
+  NO_STATED_POSITION // we searched and they have not addressed it
+  DECLINED_TO_STATE  // we asked and they refused. Different data, and informative.
 }
 
 enum PositionStatus {

@@ -12,10 +12,12 @@
     "seed": "dotenv -e ../../.env -- tsx src/seed.ts",
     "studio": "dotenv -e ../../.env -- prisma studio",
     "typecheck": "tsc --noEmit",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "seed:fixture": "dotenv -e ../../.env -- tsx src/seed-fixture.ts"
   },
   "dependencies": {
-    "@prisma/client": "^5.20.0"
+    "@prisma/client": "^5.20.0",
+    "@civic/core": "workspace:*"
   },
   "devDependencies": {
     "prisma": "^5.20.0",

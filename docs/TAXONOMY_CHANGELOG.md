@@ -60,3 +60,17 @@ required to carry, when a court may remove firearms and on what proof — withou
 direction.
 
 Still open for Phase 0: a human reader, not a model, has to sign off on these.
+
+## 0003 — DECLINED_TO_STATE added to the stance scale (2026-09-04)
+
+Not a taxonomy change; recorded here because it changes what a cell can say.
+
+`NO_STATED_POSITION` was doing two jobs. A candidate who was asked and refused is
+different data from a candidate whose public record is silent, and the refusal is itself
+informative to a voter. `DECLINED_TO_STATE` splits them. Both are excluded from the
+matcher — imputing a midpoint for either would make silence read as moderation — and both
+are shown to users as themselves.
+
+Source: `docs/RESEARCH_2026-09.md` §4. guides.vote separates Mixed / Unclear / No position
+found / drop-the-question; Meet Your Mayor merges refusal into silence and then re-splits
+them at render time by inspecting strings.
