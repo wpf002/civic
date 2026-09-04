@@ -222,6 +222,23 @@ METHODOLOGY.md published; fidelity numbers in `docs/PHASE0_RESULTS.md`.
 
 ### Phase 1 — Data spine (4 weeks)
 
+Ingest architecture, sources and failure modes are specified in `docs/INGEST.md`, which
+was written from live probes of every source rather than from documentation. Read it
+before writing an adapter. The three findings that change the plan:
+
+1. **Texas election dates and the whole filing calendar need no source.** They are fixed
+   in statute as offsets from election day, so `tx-uniform-dates.ts` generates them as a
+   pure function. Built, with 9 tests. It is the fixed point every scraped source is
+   checked against — a source that has published nothing by the statutory filing deadline
+   is a fetch failure, not an empty field.
+2. **Address → district is fully solved, free and keyless.** Built and verified live in
+   `districts.ts`. Census for federal and state, city ArcGIS for council, DISD ArcGIS for
+   trustee.
+3. **No machine-readable source lists the November 2027 Dallas roster, and none will.**
+   The city publishes scanned PDFs in an IIS directory; DISD publishes an HTML page whose
+   slug rotates each cycle. Fetching and diffing is fully automatable; *accepting* a
+   roster change is not, and must never be.
+
 - Migrations applied on Railway Postgres.
 - `manual` adapter fully working: reads `candidates.csv` + `sources.csv`, upserts Jurisdiction/Office/Race/Candidate/Candidacy, fetches each source URL, normalizes to text, hashes, archives raw HTML/PDF to Railway volume or R2, writes Source rows.
 - `openstates` adapter: Texas legislators, districts, bills, votes → Incumbency + VoteRecord.

@@ -45,6 +45,9 @@ importers:
         specifier: ^4.1.13
         version: 4.5.4
     devDependencies:
+      dotenv-cli:
+        specifier: ^7.4.2
+        version: 7.4.4
       tsx:
         specifier: ^4.19.1
         version: 4.23.13
