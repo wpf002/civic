@@ -1,0 +1,122 @@
+[
+  {
+    "slug": "chad-west",
+    "candidate": "Chad West",
+    "office": "Dallas City Council District 1",
+    "url": "https://chadwestdallas.com/policy/",
+    "status": 200,
+    "chars": 11951,
+    "contentHash": "e53602fba89e56112383e35798dc6832ae78aeb0ff50475e3d4676af239706c3",
+    "capturedAt": "2026-09-04T23:40:59.551Z"
+  },
+  {
+    "slug": "jesse-moreno",
+    "candidate": "Jesse Moreno",
+    "office": "Dallas City Council District 2",
+    "url": "https://www.jessemoreno.com/accomplishments",
+    "status": 200,
+    "chars": 2495,
+    "contentHash": "c0637a6b2a43ffabcedb778634f1213b244f8a6c7f7b4098a09d546500315d12",
+    "capturedAt": "2026-09-04T23:40:59.631Z"
+  },
+  {
+    "slug": "zarin-gracey",
+    "candidate": "Zarin Gracey",
+    "office": "Dallas City Council District 3",
+    "url": "https://www.zaringracey.com/about_zarin",
+    "status": 200,
+    "chars": 5737,
+    "contentHash": "71349a20ba02a63e523a89baac811a8d07617167fb9cd0e95995694ed05ddbd3",
+    "capturedAt": "2026-09-04T23:41:00.224Z"
+  },
+  {
+    "slug": "jaime-resendez",
+    "candidate": "Jaime Resendez",
+    "office": "Dallas City Council District 5",
+    "url": "https://resendezforcitycouncil.com/about",
+    "status": 200,
+    "chars": 2477,
+    "contentHash": "6908c4cf4f5f4c55b12a98fe0df4ecc9058416ee44d8fd018d15b05e3ce4ee0d",
+    "capturedAt": "2026-09-04T23:41:00.398Z"
+  },
+  {
+    "slug": "adam-bazaldua",
+    "candidate": "Adam Bazaldua",
+    "office": "Dallas City Council District 7 (Deputy Mayor Pro Tem)",
+    "url": "https://www.bazaldua4dallas.com/",
+    "status": 200,
+    "chars": 2535,
+    "contentHash": "e27771aa88b4928dd73014f13cc1d4ec8b78e849c099690ac76b02bcbd728c15",
+    "capturedAt": "2026-09-04T23:41:00.480Z"
+  },
+  {
+    "slug": "paula-blackmon",
+    "candidate": "Paula Blackmon",
+    "office": "Dallas City Council District 9",
+    "url": "https://web.archive.org/web/20190718215202/https://paulabforcouncil.com/issues",
+    "status": 200,
+    "chars": 1769,
+    "contentHash": "6c151fc5edfb7bdacf7505190877093b3921b25e4a4c8e3910dec95bfcf50f6f",
+    "capturedAt": "2026-09-04T23:41:00.671Z"
+  },
+  {
+    "slug": "cara-mendelsohn",
+    "candidate": "Cara Mendelsohn",
+    "office": "Dallas City Council, District 12",
+    "url": "https://www.carafordallas.com/about",
+    "status": 200,
+    "chars": 6218,
+    "contentHash": "ed6bde5ed46b6d341abb46bf8a6febc98ca603a644b76b67b68ab9357c10c9c2",
+    "capturedAt": "2026-09-04T23:41:00.910Z"
+  },
+  {
+    "slug": "gay-donnell-willis",
+    "candidate": "Gay Donnell Willis",
+    "office": "Dallas City Council District 13",
+    "url": "https://www.gaydonnellwillis.com/home/",
+    "status": 200,
+    "chars": 22954,
+    "contentHash": "772558f971da50f7a666630be6651029db39d8a6e50aabf3619ab08e9766d629",
+    "capturedAt": "2026-09-04T23:41:00.982Z"
+  },
+  {
+    "slug": "paul-ridley",
+    "candidate": "Paul Ridley",
+    "office": "Dallas City Council District 14",
+    "url": "https://paulridleyfordallas.com/accomplishments",
+    "status": 200,
+    "chars": 6672,
+    "contentHash": "462171aeaedb0821f78e38e63688fb0836c7ff268fb940951727c991bcbc3024",
+    "capturedAt": "2026-09-04T23:41:01.046Z"
+  },
+  {
+    "slug": "kathy-stewart",
+    "candidate": "Kathy Stewart",
+    "office": "Dallas City Council, D10 (the site writes it as \"Dallas City Council, D10\" and \"your D10 City Council Member\")",
+    "url": "https://www.kathystewartd10.com/",
+    "status": 200,
+    "chars": 5736,
+    "contentHash": "2ae97f0812c3446689158fbb18c9238dd7d99a371f98c2dd7c4985b5c624271f",
+    "capturedAt": "2026-09-04T23:41:01.211Z"
+  },
+  {
+    "slug": "bill-roth",
+    "candidate": "Bill Roth",
+    "office": "Dallas City Council District 11",
+    "url": "https://www.rothfordallas.com/issues",
+    "status": 200,
+    "chars": 3293,
+    "contentHash": "752069a6368c59b2bb4e3aebdf4589079b0dba471ecdd2240be4ff55fbd117ef",
+    "capturedAt": "2026-09-04T23:41:02.065Z"
+  },
+  {
+    "slug": "jeff-kitner",
+    "candidate": "Jeff Kitner",
+    "office": "Dallas City Council District 11",
+    "url": "https://web.archive.org/web/20250623125220/https://www.jeffkitnerfordallas.com/theissues",
+    "status": 200,
+    "chars": 12495,
+    "contentHash": "3e8d5ae21814e826b81a0bff0d35ec5df7627b28b6951b5b9b7d15f7ed2b8a2c",
+    "capturedAt": "2026-09-04T23:41:02.274Z"
+  }
+]

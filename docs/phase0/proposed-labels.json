@@ -1,0 +1,452 @@
+[
+  {
+    "candidate": "Chad West",
+    "pageCharacter": "A campaign \"Policy Goals\" page: five topical essays (homelessness/Miramar hotel, public safety, housing affordability, infrastructure, government transparency, new urbanism) each mixing first-term record with a bulleted list of stated priorities, wrapped in site navigation, a mailing-list signup, and donation links.",
+    "labels": [
+      {
+        "issueSlug": "economy-jobs",
+        "stance": "SUPPORT",
+        "quote": "we must bring more rooftops to Oak Cliff and provide more economic opportunities (jobs and entrepreneur resources)",
+        "reasoning": "He states a direction — creating jobs and entrepreneur resources to prevent displacement — but as a general aspiration with no specific commitment or mechanism, so it falls short of an unconditional pledge.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "housing-cost-of-living",
+        "stance": "SUPPORT",
+        "quote": "Rising housing costs in Dallas are driven primarily by a lack of supply. We need more workforce housing to meet the demand as new residents continue to move to North Texas in droves.",
+        "reasoning": "A clear pro-supply, pro-affordability direction backed by named tools (inclusionary zoning, land bank, Comprehensive Housing Policy), but qualified by his categorical exclusion of single-family upzoning, so it is a direction rather than an unconditional commitment.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "taxes-budget",
+        "stance": "SUPPORT",
+        "quote": "Identify wasteful spending in our city’s budget and redirect funds to public safety salaries",
+        "reasoning": "A stated budget priority — reallocate existing spending rather than expand it — listed as a priority bullet rather than a vote commitment.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "public-safety-policing",
+        "stance": "SUPPORT",
+        "quote": "Increase starting salaries and improve health benefits to retain quality talent",
+        "reasoning": "Multiple explicit priorities to raise officer pay, add community police officers, and house first responders give a clear direction, but they are priority bullets and aspirational \"we must do better\" language rather than an unconditional \"I will vote to\" commitment.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "criminal-justice",
+        "stance": "SUPPORT",
+        "quote": "As urban police departments learn and apply 21st century police tactics, we must support evidence-based strategies to engage community members and ensure quality outcomes of resident interactions with police.",
+        "reasoning": "He endorses reforming police practice toward evidence-based, community-engaged tactics — a stated reform direction, though nothing about courts, bail, sentencing, or incarceration appears, so a reader could instead call this purely a policing statement and score the issue NO_STATED_POSITION.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "climate-energy",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "The page never mentions climate, emissions, energy, or utilities; the only near-adjacent items are blog-link titles in the footer with no stance text.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "environment-water",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "\"Mobility in Dallas | Bioswales\" and \"Coombs Creek Trail Expansion\" are bare navigation/link titles carrying no stated view on water, parks, or environmental policy.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "transportation-infrastructure",
+        "stance": "STRONG_SUPPORT",
+        "quote": "Will fight for funding to add sidewalks and pedestrian connectivity where there are no pedestrian routes, prioritizing those that would extend safe routes to schools.",
+        "reasoning": "\"Will fight for funding\" is an unconditional commitment, reinforced by unhedged support for removing I-345 and for complete streets, with only the bike-lane bullet carrying a hedge.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "voting-elections",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "The only election-related text is the \"Voting Information\" nav link; his vote to keep an evening Council meeting concerns public participation in meetings, not voting or election administration.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "lgbtq-rights",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "Nothing on the page addresses LGBTQ people or related policy; \"diverse groups\" in the policing section is not specific enough to carry a position on this issue.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "civil-rights",
+        "stance": "SUPPORT",
+        "quote": "Furthermore, we must provide visionary leadership and training that helps improve sensitivity to diverse groups.",
+        "reasoning": "Combined with his account of redlining and highways destroying minority neighborhoods, this states a direction favoring equity measures, but it is a general \"we must\" rather than a specific or unconditional pledge.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "local-development-zoning",
+        "stance": "MIXED",
+        "quote": "The heart of Dallas is comprised of our single-family neighborhoods, and we must cherish them at all costs. I have never and will never support a project that involves tearing down single-family homes and upzoning the lots.",
+        "reasoning": "He simultaneously backs pro-development zoning tools (inclusionary zoning, live-work and incentive ordinances, by-right ADUs, transit-oriented development on the I-345 corridor) and categorically rejects single-family upzoning while seeking tax stabilization overlays against over-development, so the page takes both sides.",
+        "confidenceInLabel": "arguable"
+      }
+    ]
+  },
+  {
+    "candidate": "Jeff Kitner",
+    "pageCharacter": "A campaign issues page combining seven short \"Issues That Matter\" blurbs (written in third person) with a longer Q&A section on governance, property taxes, bonds, and specific District 11 land-use fights (Pepper Square, Valley View/International District, HEB, parking reform, ForwardDallas 2.0) — heavy on municipal development and budget, silent on most state/federal-flavored topics.",
+    "labels": [
+      {
+        "issueSlug": "economy-jobs",
+        "stance": "SUPPORT",
+        "quote": "The best way to reduce our reliance on single-family property taxes is smart development that increases our revenue without harming established neighborhoods.",
+        "reasoning": "He endorses growth-through-development as the revenue answer, but qualifies it as \"smart\" and bounded by not harming established neighborhoods, so it is a directional preference rather than an unconditional commitment.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "housing-cost-of-living",
+        "stance": "MIXED",
+        "quote": "That’s why I supported mixing in some residential with the commercial use, but I urged the current councilmember to push for much lower density than what was ultimately approved.",
+        "reasoning": "The same sentence backs adding residential units and simultaneously pushes to cut how many get built, which is support for one part and opposition to another.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "taxes-budget",
+        "stance": "SUPPORT",
+        "quote": "I do not support raising property taxes and would like to see continued reductions of property taxes.",
+        "reasoning": "A clear direction toward lowering property taxes, but phrased as \"would like to see\" rather than a commitment to vote a particular way, so it falls short of STRONG.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "public-safety-policing",
+        "stance": "STRONG_SUPPORT",
+        "quote": "Jeff will fight to increase the number of police officers on the force and will collaborate with the Dallas Police Department to ensure that officers have the resources they need to continue to reduce violent crime, improve 911 response times, and recruit top talent to our force.",
+        "reasoning": "\"will fight to increase\" and \"will collaborate\" are unconditional commitments to more officers and more police resources, with no hedge or funding caveat.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "criminal-justice",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "Nothing on charging, bail, sentencing, jails, diversion, or prosecution; the homelessness and encampment language is service and public-space policy, not the handling of accused people.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "climate-energy",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "The page never mentions emissions, electricity, fuel, or any energy source.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "environment-water",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "Parks, trails, and a passing mention of flooding at a proposed HEB site are quality-of-life and siting concerns, not stated positions on water, land, or waste policy.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "transportation-infrastructure",
+        "stance": "SUPPORT",
+        "quote": "Debt from bonds is a significant component of our city budget, and I believe we should pay for infrastructure maintenance primarily out of the operating budget instead.",
+        "reasoning": "A clear directional preference on how street and sidewalk maintenance should be funded, stated as a belief (\"I believe we should\") rather than a commitment to a specific vote.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "voting-elections",
+        "stance": "SUPPORT",
+        "quote": "I led the efforts of the Better Elections Dallas coalition, along with David de la Fuente, Jeff Mankoff, the League of Women Voters of Dallas, and other civic and business organization partners, to include a City Charter Amendment to move our local elections to November of odd-numbered years. This amendment will benefit the city by increasing voter turnout, reducing voter fatigue, and saving Dallas residents over $400,000.",
+        "reasoning": "More than a record: he states the specific election-date change will benefit the city by increasing turnout, which is an endorsement of the measure, though framed as past leadership rather than a forward commitment.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "lgbtq-rights",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "Sexual orientation and gender identity are never mentioned anywhere on the page.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "civil-rights",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "No discussion of discrimination or equality law; the line about avoiding \"issues outside of the scope of city government\" names no issue and does not state a position on any protection.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "local-development-zoning",
+        "stance": "MIXED",
+        "quote": "In the dense areas near Downtown and Uptown, I would support a reduction of parking minimums to encourage more pedestrian and bicycle traffic. That approach would not be appropriate in less dense areas of the city, including most of District 11.",
+        "reasoning": "He backs loosening a zoning requirement in one part of the city and explicitly rejects the same change in his own district, taking both sides of the reform.",
+        "confidenceInLabel": "clear"
+      }
+    ]
+  },
+  {
+    "candidate": "Bill Roth",
+    "pageCharacter": "A campaign website \"Issues\" page: five short themed planks (public safety, city services, single-family zoning, transparency, taxes) written in third person as forward-looking promises, with site navigation and a donate/voting banner around them — a policy platform, not a biography or record of accomplishments.",
+    "labels": [
+      {
+        "issueSlug": "economy-jobs",
+        "stance": "SUPPORT",
+        "quote": "By attracting new businesses and growing the commercial tax base, the city can generate the needed funds to provide essential services while lowering the tax burden on residential property owners.",
+        "reasoning": "He endorses attracting new business and expanding the commercial tax base, but only as a stated means toward tax relief with no committed action, so it is a preference rather than an unconditional commitment.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "housing-cost-of-living",
+        "stance": "OPPOSE",
+        "quote": "While open to thoughtful development in appropriate areas, Bill opposes the forced introduction of high-density housing into established residential zones.",
+        "reasoning": "The only housing-supply stance on the page is opposition to added density in residential neighborhoods, softened by openness to development elsewhere, so it is OPPOSE rather than STRONG_OPPOSE; affordability itself is only gestured at.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "taxes-budget",
+        "stance": "SUPPORT",
+        "quote": "Dallas must hold the line on increasing taxes with the goal of cutting taxes.",
+        "reasoning": "He clearly backs holding and then cutting taxes, but frames it as a goal the city should pursue (\"will work to reduce the burden\") rather than a specific vote he commits to.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "public-safety-policing",
+        "stance": "SUPPORT",
+        "quote": "Bill supports increasing the number of patrol police officers and ensuring our fire personnel are well-equipped to respond to emergencies.",
+        "reasoning": "\"Bill supports\" states a clear direction — more patrol officers and better-equipped fire personnel — without a hard commitment such as a pledged vote or a funding number.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "criminal-justice",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "The page discusses policing and crime prevention but says nothing about courts, prosecution, sentencing, jails, bail, or reentry.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "climate-energy",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "No mention of emissions, climate, renewables, or energy policy; \"keep the lights on\" is a figure of speech about basic city services.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "environment-water",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "Nothing about water supply, flooding, air quality, parks conservation, or pollution appears anywhere on the page.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "transportation-infrastructure",
+        "stance": "SUPPORT",
+        "quote": "He’ll focus on streamlining city services, prioritizing road and sidewalk repairs, modernizing traffic signals, and increasing transparency in how public works are executed.",
+        "reasoning": "A clear direction on streets, sidewalks, and traffic signals, but \"he'll focus on\" is a stated priority rather than an unconditional commitment to a specific action.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "voting-elections",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "The only election content is a logistical banner of early-voting and election dates, which carries no position on election administration or voting rules.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "lgbtq-rights",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "The document does not mention LGBTQ people or any related policy.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "civil-rights",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "Transparency and accountability in budgeting are about government process, not civil rights or discrimination policy, which the page never addresses.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "local-development-zoning",
+        "stance": "OPPOSE",
+        "quote": "He supports preserving single-family zoning to maintain the character, stability, and quality of life in Dallas neighborhoods.",
+        "reasoning": "Read against the pro-development direction, he takes a restrictive stance — preserve single-family zoning and block density mandates — but qualifies it by remaining \"open to thoughtful development in appropriate areas,\" which keeps it short of STRONG_OPPOSE and makes MIXED defensible.",
+        "confidenceInLabel": "arguable"
+      }
+    ]
+  },
+  {
+    "candidate": "Paula Blackmon",
+    "pageCharacter": "A short campaign-site \"Issues\" index page: four teaser blurbs (public education, White Rock Lake, public safety, property taxes) each truncated with a \"Read More\" link, framed as things she \"will advocate for\" — headline-level intentions, not a developed policy platform.",
+    "labels": [
+      {
+        "issueSlug": "economy-jobs",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "The page never mentions jobs, wages, business, or economic development.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "housing-cost-of-living",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "Property tax relief is framed as a tax burden issue; nothing on the page addresses housing supply, rent, affordability, or cost of living generally.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "taxes-budget",
+        "stance": "SUPPORT",
+        "quote": "In order to reduce the burden of property taxes on our neighbors, we must look to state and local solutions.",
+        "reasoning": "A clear direction toward reducing property taxes, but the commitment is only to \"look to\" unspecified state and local solutions, which is exploratory rather than an unconditional commitment.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "public-safety-policing",
+        "stance": "SUPPORT",
+        "quote": "I will\nwork to make sure that the Dallas Police Department and the Dallas Fire and Rescue\nDepartment have the resources they need to recruit, retain and train our public\nsafety personnel",
+        "reasoning": "A clear direction toward funding and staffing police and fire, but \"work to make sure\" is an effort pledge rather than an unconditional commitment to a specific action.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "criminal-justice",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "Nothing about courts, sentencing, jails, bail, or police accountability appears; the public safety blurb is only about departmental resources.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "climate-energy",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "No mention of climate, emissions, or energy anywhere on the page.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "environment-water",
+        "stance": "SUPPORT",
+        "quote": "White Rock Lake is an asset to our community\nthat needs to be protected and maintained. I will prioritize the overall health and wellbeing of our lake so that it continues to be the premier green space of our City.",
+        "reasoning": "A clear pro-protection direction for a specific water body, but \"I will prioritize\" states an emphasis rather than committing to a defined action, so it falls short of the unconditional-commitment bar.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "transportation-infrastructure",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "No roads, transit, sidewalks, bonds, or infrastructure content appears.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "voting-elections",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "The accountability-and-transparency framing refers to city government and staff, not to voting or election administration.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "lgbtq-rights",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "The page does not mention LGBTQ people or related policy at all.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "civil-rights",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "No discussion of discrimination, equity, or civil rights protections appears.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "local-development-zoning",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "Calling the lake a green space describes an existing amenity and says nothing about development, land use, or zoning decisions.",
+        "confidenceInLabel": "clear"
+      }
+    ]
+  },
+  {
+    "candidate": "Adam Bazaldua",
+    "pageCharacter": "A campaign homepage for a re-election bid — mostly navigation chrome, biography framing (\"The Trusted Leader in District 7\"), and a five-bullet list of broad priority themes with no policy specifics, followed by volunteer/yard-sign/donate calls to action.",
+    "labels": [
+      {
+        "issueSlug": "economy-jobs",
+        "stance": "SUPPORT",
+        "quote": "Smart Economic Growth – Attracting local businesses, supporting small entrepreneurs, and ensuring development benefits our residents",
+        "reasoning": "A clear pro-small-business, pro-growth direction stated as a theme rather than a commitment to any specific action, so SUPPORT rather than STRONG_SUPPORT.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "housing-cost-of-living",
+        "stance": "SUPPORT",
+        "quote": "Tackling Homelessness & Housing Challenges – Advocating for long-term solutions that provide real pathways to stability",
+        "reasoning": "He addresses housing and homelessness with a stated preference for long-term stability solutions, but names no policy and makes no commitment, so it is a qualified direction rather than a pledge.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "taxes-budget",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "Nothing on the page addresses tax rates, revenue, or the city budget; \"accountable, effective city government\" is a governance adjective, not a budget stance.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "public-safety-policing",
+        "stance": "SUPPORT",
+        "quote": "Safer Streets & Stronger Neighborhoods – Investing in infrastructure, reducing crime, and expanding community-based safety initiatives",
+        "reasoning": "He states a direction — reducing crime and expanding community-based safety programs — but as a thematic priority with no commitment or specifics about policing itself.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "criminal-justice",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "The page says nothing about courts, sentencing, bail, incarceration, or police accountability; \"reducing crime\" is a public-safety framing, not a criminal-justice stance.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "climate-energy",
+        "stance": "SUPPORT",
+        "quote": "Investing in Infrastructure & Sustainability – Improving roads, bike lanes, and public transit, and pushing for a cleaner, greener Dallas",
+        "reasoning": "\"Sustainability\" and \"pushing for a cleaner, greener Dallas\" state a pro-environmental direction, but with no energy or emissions policy named it stays a preference, and a reader could fairly call this too vague to count.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "environment-water",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "There is no mention of water, flooding, parks, pollution, or conservation; the only green language is the generic \"cleaner, greener Dallas\" phrase already read as climate.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "transportation-infrastructure",
+        "stance": "SUPPORT",
+        "quote": "Investing in Infrastructure & Sustainability – Improving roads, bike lanes, and public transit, and pushing for a cleaner, greener Dallas",
+        "reasoning": "Roads, bike lanes, and transit are named as things he would improve — a clear direction stated as a priority rather than a specific funding commitment.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "voting-elections",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "The page's election content is logistical campaign navigation (\"Election Information\", volunteer, donate) and never addresses voting access or election administration.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "lgbtq-rights",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "No mention of LGBTQ people or related policy appears anywhere in the archived text.",
+        "confidenceInLabel": "clear"
+      },
+      {
+        "issueSlug": "civil-rights",
+        "stance": "SUPPORT",
+        "quote": "Putting People First – Fighting for working families, standing up for reproductive rights, and ensuring every voice in our community is heard",
+        "reasoning": "\"standing up for reproductive rights\" is a stated direction on a rights issue, but phrased as an ongoing theme without a specific action, so SUPPORT rather than STRONG_SUPPORT; whether reproductive rights belongs under this slug is a taxonomy judgment.",
+        "confidenceInLabel": "arguable"
+      },
+      {
+        "issueSlug": "local-development-zoning",
+        "stance": "NO_STATED_POSITION",
+        "quote": "",
+        "reasoning": "\"ensuring development benefits our residents\" appears only as a clause inside the economic-growth bullet and names no direction on zoning, density, or approvals, so there is no stance to score.",
+        "confidenceInLabel": "arguable"
+      }
+    ]
+  }
+]
