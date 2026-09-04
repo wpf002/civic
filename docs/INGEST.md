@@ -289,3 +289,33 @@ which 5 of 9 DISD trustee seats are actually up in November 2027. That is set by
 resolution 25-1776 and its DISD counterpart, is derivable from no machine-readable
 source, and is the denominator every roster-completeness check runs against. It gets a
 `SeatUpForElection` row with a citation and a human's name on it.
+
+---
+
+## Built so far
+
+| Piece | State |
+|---|---|
+| `tx-uniform-dates.ts` | Done. Pure function, 9 tests. `pnpm --filter @civic/ingest cli calendar --year 2027` |
+| `districts.ts` | Done, verified live. `cli districts --address "1500 Marilla St, Dallas, TX"` |
+| `roster.ts` — diff + shrink guard | Done, 14 tests |
+| `dallas-isd.ts` | Done, 10 tests against checked-in copies of the live pages. `cli roster --adapter dallas-isd --election 2026-05-02` returns 5 real candidates across 3 trustee districts |
+| Schema — `IngestRun`, `WatchTarget`, `RosterSnapshot`, `RosterDiff`, `SeatUpForElection`, candidacy lifecycle | Done, migrated |
+| `dallas-city-secretary.ts` | Not started. The other 15 contests, and the harder half |
+| Railway cron wiring | Not started |
+| Writing accepted rosters into `Candidacy` | Not started — deliberately. The review surface has to exist first |
+
+The CLI deliberately **prints and does not write**. Nothing in this package can create a
+`Candidacy` yet, because the human acceptance step it depends on is not built. An
+adapter that could write before there was somewhere to review its output would make the
+shrink guard advisory, which is the one thing it must never be.
+
+### What running it against the pilot does today
+
+    cli roster --adapter dallas-isd --election 2027-11-02
+    → No candidates page for 2027-11-02 is linked from the index yet.
+      Found: 2026-05-02. This is "not yet published", which is not the
+      same as "no candidates".
+
+That is the correct answer and it is the point of the marker-and-date assertions: the
+adapter refuses to hand back last cycle's roster at HTTP 200.
