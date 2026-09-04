@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: postgresql://civic:civic@localhost:5432/civic
+      # Tests assert the admin routes refuse the placeholder token, so give CI a real one.
+      ADMIN_TOKEN: ci-admin-token
     services:
       postgres:
         image: postgres:16
@@ -31,6 +33,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @civic/db exec prisma migrate deploy
+      # The API, ingest and extract suites assert against the fixture, so it has to exist.
+      - run: pnpm db:seed
+      - run: pnpm --filter @civic/db seed:fixture
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test

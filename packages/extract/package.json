@@ -5,8 +5,8 @@
   "type": "module",
   "main": "./src/index.ts",
   "scripts": {
-    "cli": "tsx src/cli.ts",
-    "test": "vitest run --passWithNoTests",
+    "cli": "dotenv -e ../../.env -- tsx src/cli.ts",
+    "test": "dotenv -e ../../.env -- vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit",
     "smoke": "dotenv -e ../../.env -- tsx src/smoke.ts"
   },

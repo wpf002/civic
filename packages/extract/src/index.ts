@@ -1,3 +1,4 @@
 export * from "./llm.js";
 export * from "./pipeline.js";
+export * from "./pipeline-db.js";
 export * from "./prompts/extract-positions.js";
