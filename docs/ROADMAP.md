@@ -16,7 +16,15 @@ Repo: `wpf002/civic`. Stack: TypeScript, pnpm, Turborepo, Next.js, Fastify, Pris
 
 **Timeline reality.** Midterms are Nov 3, 2026. Not shippable by then. Targets:
 
-- **May 1, 2027 Dallas municipal election** (City Council all 14 districts + mayor is 2027, DISD trustee seats). Pilot. Small candidate pool, no APIs, worst-case data problem on purpose.
+- **November 2, 2027 Dallas municipal election** (City Council all 14 districts + mayor, and 5 of 9 DISD trustee seats). Pilot. Small candidate pool, no APIs, worst-case data problem on purpose.
+
+  **Corrected 2026-09-03.** This was planned as May 1, 2027. That election does not exist: Dallas
+  voters passed Proposition D in Nov 2024 deleting the May requirement from the charter, and in
+  Nov 2025 the council voted 15-0 to move to November of odd years. DISD followed, changing trustee
+  terms from three years to four with 5 seats up in Nov 2027 and 4 in Nov 2029. See
+  `docs/RESEARCH_2026-09.md` §0 — this moves every calendar anchor below, changes the electorate
+  (May 2025 city turnout was 8.4%), and weakens the "nobody covers this race" premise, because
+  statewide guides cover a November constitutional-amendment ballot.
 - **March 2028 Texas primary, Nov 2028 general.** Real launch. Federal + state + Dallas County.
 
 ---
@@ -181,14 +189,36 @@ Decisions locked:
 
 Answer these before any app code past the bootstrap.
 
-1. **Source inventory for the pilot.** List every May 2027 Dallas race. For each, what sources will exist? Candidate sites, Dallas Morning News questionnaires, League of Women Voters guide (VOTE411), forums, council voting records (incumbents), DISD board minutes. Write it down as `data/manual/2027-05-dallas/SOURCES.md`.
+0. **Entity and legal gate. Blocking; nothing else in Phase 0 matters if this fails.** Civic has
+   no legal entity and no funding model, and the landscape research contained zero legal, tax, or
+   regulatory sources. Decide the entity before writing the methodology page, because it determines
+   what the product may do. IRS Rev. Rul. 78-248 and 2007-41 govern 501(c)(3) voter guides:
+   candidate answers must be *unedited*, and the org must avoid stating its own position. An LLM
+   writing a two-sentence summary is editing; a weighted quiz emitting a ranked list of named
+   candidates is close to candidate rating. Under a c3 that is live exposure in a 2028 Texas cycle;
+   under an LLC it is fine and every grant source in this category is closed. Separately, TRAIGA
+   (HB 149, effective 2026-01-01, AG enforcement, penalties to $100k per violation) is an untested
+   Texas surface for an AI system publishing stance claims about named candidates. Get an opinion
+   from a nonprofit/election-law attorney in Texas. See `docs/RESEARCH_2026-09.md` §8.
+1. **Source inventory for the pilot.** List every November 2027 Dallas race. For each, what sources will exist? Candidate sites, Dallas Morning News questionnaires, League of Women Voters guide (VOTE411), forums, council voting records (incumbents), DISD board minutes. Write it down as `data/manual/2027-05-dallas/SOURCES.md`.
 2. **Editorial policy signed.** `docs/EDITORIAL_POLICY.md` finalized. Summary style guide with 10 good/bad examples.
 3. **Taxonomy frozen for the pilot.** 20 issues in seed.ts, each with a neutral one-paragraph description and a level mask. Reviewed by at least one person who'd vote differently than you.
 4. **Extraction fidelity test.** Take 5 real candidate websites from the 2025 Dallas municipal cycle. Hand-label positions. Run the extractor. Measure stance agreement and quote-validity rate.
 
 **Kill criteria:** if extractor stance agreement with hand labels is under 80% on the 5-site test, or under 40% of local candidates have any findable stated positions, the pilot scope changes (fewer races, or a "candidate questionnaire" outreach program becomes Phase 1). Don't build the UI against data that won't exist.
 
-**Acceptance:** SOURCES.md, EDITORIAL_POLICY.md v1, TAXONOMY_CHANGELOG.md with entry 0001, fidelity numbers in `docs/PHASE0_RESULTS.md`.
+5. **Published methodology page with an explicit generative-AI policy.** Every credible competitor
+   publishes a dated, versioned one; Civic ships a two-model LLM pipeline with none. Ballotpedia's
+   bar is the comparison Civic loses by default until it publishes.
+6. **Campaign-review protocol, written before first contact.** Adopt the guides.vote playbook: show
+   a campaign only its own column, hard deadline, publish without them, never give veto over
+   phrasing. Pre-declare the exact non-response string and the freeze date in the invitation, so a
+   data gap is a documented editorial act rather than a fight.
+
+**Acceptance:** entity decided and counsel's opinion on file; SOURCES.md; EDITORIAL_POLICY.md v1
+(done, including the summary style guide); TAXONOMY_CHANGELOG.md entries 0001-0002 (done, but the
+descriptions still need a *human* second reader — a model arguing both sides is not the same thing);
+METHODOLOGY.md published; fidelity numbers in `docs/PHASE0_RESULTS.md`.
 
 ### Phase 1 — Data spine (4 weeks)
 
@@ -197,10 +227,23 @@ Answer these before any app code past the bootstrap.
 - `openstates` adapter: Texas legislators, districts, bills, votes → Incumbency + VoteRecord.
 - `congress` adapter (Congress.gov API): TX delegation, roll calls → VoteRecord.
 - `fec` adapter: federal candidate list for TX, external IDs only.
-- Address → districts: Census Geocoder (free) returns state/county/place/CD/SLDU/SLDL GEOIDs. Map GEOID → District rows. Dallas council and DISD districts need boundary shapefiles from the city GIS portal loaded into PostGIS. (Google Civic's Representatives endpoint is gone; I'm fairly sure it shut down in 2025. Don't plan on it.)
+- Address → districts: Census Geocoder (free) returns state/county/place/CD/SLDU/SLDL GEOIDs.
+  Google Civic's representatives endpoint is confirmed gone (2025-04-30). Dallas council resolves
+  keylessly against the city ArcGIS point query. **DISD does not need a PostGIS shapefile build** —
+  it publishes two public keyless ArcGIS feature services. They disagree: the same point returns
+  District 9 from `TrusteeDistricts` and District 5 from `DISD_Trustee_SMD_Adopted_Dec_16_2021`,
+  and the first returns all-zero `Population`/`Voting_Age`, which is what a draft redistricting
+  layer looks like. The real task is determining which layer is authoritative and versioned to the
+  November 2027 election — ask DISD in writing and record the answer. Verified 2026-09-03.
+- Schema additions the research says are missing, all cheap now and expensive later: split
+  `NO_STATED_POSITION` into found-and-silent vs. asked-and-declined; `sourceTier` on Evidence;
+  an evidence class on Position defined by source type rather than model confidence; archived
+  surrounding context alongside the matched span; separate `capturedAt` from `publishedAt`; a
+  media timestamp for forum audio/video; issue-per-office tagging; `isCertified` on Candidacy.
+  See `docs/RESEARCH_2026-09.md` §4.
 - Admin: Prisma Studio is enough. No custom admin UI yet.
 
-**Acceptance:** `pnpm ingest candidates --adapter manual --state TX --election 2027-05-01` populates every Dallas council + DISD race. `pnpm ingest documents --adapter manual` archives ≥ 1 source per declared candidate or logs a named gap. Address lookup returns correct council district for 20 test addresses. Zero Position rows exist yet.
+**Acceptance:** `pnpm ingest candidates --adapter manual --state TX --election 2027-11-02` populates every Dallas council + DISD race. `pnpm ingest documents --adapter manual` archives ≥ 1 source per declared candidate or logs a named gap. Address lookup returns correct council district for 20 test addresses. Zero Position rows exist yet.
 
 ### Phase 2 — Extraction pipeline (4 weeks)
 
@@ -226,11 +269,41 @@ Routes:
 - `/e/[election]/quiz` → 10-15 QuizQuestions, 5-point answer, importance weight, no persistence. Results computed client-side from `/v1/match` response. Shows match %, coverage %, per-issue breakdown.
 - `/e/[election]/quiz/card` → OG-image share card via `next/og`: top 3 issues, top 2 matches, coverage caveat, QR to the election page. Nothing about the user is in the URL. Card is generated from state passed in a signed, expiring query param that contains only issue slugs and candidate slugs.
 
-Rules: every stance chip has a source link one tap away. Every candidate row shows a coverage number. No candidate photo cropping, filtering, or ordering that isn't alphabetical or ballot order.
+Design direction is specified in `docs/DESIGN.md`, derived from `docs/RESEARCH_2026-09.md`. Four
+things are load-bearing; the rest is house style:
+
+- **The Stance Rule.** Direction encoded by position on a five-cell track, intensity by ink value,
+  MIXED by shape. Hue never encodes politics. This is simultaneously the WCAG 1.4.1 argument and
+  the nonpartisanship argument — a product where color never codes a political direction cannot be
+  accused of coloring one side favorably, and that is a claim you can point at pixels to defend.
+- **The Silence Receipt.** NO_STATED_POSITION renders larger than a stance, never smaller or
+  greyed, with a dated enumeration of what was searched. Absence becomes evidence of absence.
+  Nobody can copy it without building the archive first.
+- **Quote-in-source with the verified span marked.** ~40 words of archived source with the verified
+  span in `<mark>`. `findVerbatim` already returns the offsets.
+- **Coverage ticks.** One tick per applicable issue — filled, hollow, or struck — plus a literal
+  fraction.
+
+Rules: every stance has its source one tap away. Every candidate row shows a coverage number. No
+photo cropping or filtering. **Ordering is ballot order, disclosed in a visible line; ties are
+shown as ties and broken by seeded shuffle, never alphabetically** — rank 1 alone is worth 2-6
+points of vote probability, so ordering is an intervention, not a presentation detail.
+
+**Do not sort issues by stance divergence.** It was proposed and it is wrong: divergence is computed
+only over filled cells, so in a sparse grid the default ordering of the main navigation is driven by
+which candidates generate the most extractable text. That is exactly the bias Velez identifies as
+the strongest fair criticism of this architecture. Use the taxonomy's editorial `sortOrder`.
+
+Table stakes the research says Civic lacks and users will expect: a saveable/printable ballot
+artifact (localStorage plus a share URL, no accounts); a public corrections log keyed to position
+IDs, because `supersedesId` is the best thing in the data model and is currently invisible; office
+explainers (what it does, term length, how many to vote for); inline issue definitions rather than
+tooltips; and Spanish at parity — which in Dallas is a source-scarcity problem, not a localization
+one, since Al Día stopped original reporting in 2023.
 
 **Acceptance:** Lighthouse mobile ≥ 90 performance, ≥ 95 accessibility. Quiz completes in under 2 minutes on a phone. Share card renders in < 1s. Zero server-side storage of answers (verified by DB inspection after a test session). Playwright smoke suite green.
 
-### Phase 4 — Dallas pilot (Feb–May 2027)
+### Phase 4 — Dallas pilot (Jun–Nov 2027)
 
 - Data freeze T-3 weeks before election; post-freeze changes go through supersede + public changelog.
 - Outreach: UNT Dallas, SMU, UT Dallas, Dallas College student governments and campus papers. Tabling at registration drives. Give student journalists admin read access to the review history.
@@ -241,7 +314,7 @@ Rules: every stance chip has a source link one tap away. Every candidate row sho
 
 **Post-pilot:** `docs/PILOT_RETRO.md`. What data was missing, what users reported, what the review queue cost in hours.
 
-### Phase 5 — Off-cycle retention (Jun–Dec 2027)
+### Phase 5 — Off-cycle retention (Dec 2027–Jun 2028)
 
 The business dies in odd years unless there's a reason to come back.
 
@@ -307,6 +380,11 @@ Phase 0 through pilot runs on your time plus maybe $5-10K (researchers, designer
 | Nobody shares the card | Pilot share rate < 5% | Card design, not product. Iterate the card. |
 | Odd-year death | Traffic → 0 after May 2027 | Phase 5 exists for this. If `/me` doesn't retain, reconsider the whole thing as a per-election utility with grant funding only. |
 | Review queue cost | > $5 / published position | Better source targeting, questionnaire program, fewer issues per level |
+| Legal entity forecloses funding, or c3 rules forecloses the product | Unresolved at Phase 0 exit | Blocking gate. IRS Rev. Rul. 78-248 / 2007-41 vs. TRAIGA; counsel before build |
+| Pilot election moves again | Council or DISD resolution | Already happened once, May → Nov 2027, and the plan did not notice for 10 months. Verify the date against the city secretary every quarter |
+| Extraction favors loud candidates | Incumbent coverage >> challenger coverage in the same race | Velez's critique, inherent to the architecture. Per-race parity invariant in the pipeline; coverage ticks make the asymmetry visible rather than hidden |
+| Matcher method determines the advice | Top match flips under a different distance function | Louwerse & Rosema showed this flips a majority of users. Publish the number; assert \|ASC\| < 0.15 in CI |
+| A competitor already claims the verbatim-verification differentiator | LikelyStance.com, launched 2026-06-10 | Unverified beyond a press release, UK constituency level. Watch it; the differentiator is the archive, not the claim |
 
 ---
 
