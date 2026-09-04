@@ -74,3 +74,38 @@ are shown to users as themselves.
 Source: `docs/RESEARCH_2026-09.md` §4. guides.vote separates Mixed / Unclear / No position
 found / drop-the-question; Meet Your Mayor merges refusal into silence and then re-splits
 them at render time by inspecting strings.
+
+## 0004 — Level masks narrowed; issue-per-office enforced (2026-09-04)
+
+No issue added, removed or renamed. Six level masks narrowed, and the mechanism that
+uses them changed.
+
+Building the issue comparison against the Dallas fixture made a latent problem visible:
+`housing-cost-of-living` was masked `ALL`, so the Housing page listed all four Dallas ISD
+trustee candidates and recorded "no stated position" against each of them. A school board
+does not set housing policy. That row is not a finding — it is a manufactured silence,
+counted against a candidate for declining to answer a question nobody asked them. The
+research names this as the fastest way to look unserious to a local reporter
+(`docs/RESEARCH_2026-09.md` §4, issue-per-office tagging).
+
+Two changes:
+
+1. **The mask is now enforced.** `/v1/elections/:slug/issues/:issueSlug` returns only
+   candidates whose office sits at a level in that issue's mask. Previously the mask
+   filtered which issues appeared in the grid but not which candidates appeared under one.
+
+2. **Six masks corrected.**
+
+   | Issue | Was | Now | Why |
+   |---|---|---|---|
+   | `housing-cost-of-living` | ALL | all but school district | A trustee sets no housing rule, rate or subsidy |
+   | `criminal-justice` | ALL | all but school district | Charging, bail, sentencing and jails are not district decisions |
+   | `climate-energy` | ALL | all but school district | Utilities, grid and permitting are not district decisions |
+   | `environment-water` | ALL | all but school district | Drinking water, sewer and floodplain rules are not district decisions |
+   | `voting-elections` | ALL | all but school district | A district administers no election and draws no map |
+   | `education-k12` | city, county, school district, state | school district, state | In Texas, DISD is independent of the City of Dallas. A council member sets no curriculum, no campus budget and no start time |
+
+Deliberately left at `ALL`: `taxes-budget` (a district sets a tax rate), `economy-jobs`
+(teacher pay is in the description), `transportation-infrastructure` (school bus service),
+`public-safety-policing` (officers assigned to schools), and the civil-rights pair (both
+reach school settings directly). Each of those is a decision a trustee actually makes.

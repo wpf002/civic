@@ -3,6 +3,10 @@ import { prisma, JurisdictionLevel } from "./index.js";
 const ALL = Object.values(JurisdictionLevel);
 const LOCAL = [JurisdictionLevel.CITY, JurisdictionLevel.COUNTY, JurisdictionLevel.SCHOOL_DISTRICT];
 const STATE_UP = [JurisdictionLevel.STATE, JurisdictionLevel.FEDERAL];
+// Everything except a school board. A DISD trustee does not set housing policy or
+// run elections, and offering the issue only to produce "no stated position" for
+// every trustee manufactures a silence that was never a question. See changelog 0004.
+const NOT_SCHOOL = ALL.filter((l) => l !== JurisdictionLevel.SCHOOL_DISTRICT);
 
 /**
  * Fixed issue taxonomy. Edit here, not in the admin UI, and add a line to
@@ -34,7 +38,7 @@ const ISSUES: Array<{
   {
     slug: "housing-cost-of-living",
     name: "Housing & Cost of Living",
-    levels: ALL,
+    levels: NOT_SCHOOL,
     description:
       "Different offices control different pieces of housing cost: whether the rules allow more " +
       "homes or fewer; how much public money goes to subsidized or lower-priced homes and to " +
@@ -55,7 +59,7 @@ const ISSUES: Array<{
   {
     slug: "education-k12",
     name: "K-12 Education",
-    levels: [...LOCAL, JurisdictionLevel.STATE],
+    levels: [JurisdictionLevel.SCHOOL_DISTRICT, JurisdictionLevel.STATE],
     description:
       "Several offices share control of public schools: how much money schools get and from " +
       "which taxes; what is taught and what is not; who decides which books libraries carry; " +
@@ -110,7 +114,7 @@ const ISSUES: Array<{
   {
     slug: "criminal-justice",
     name: "Criminal Justice",
-    levels: ALL,
+    levels: NOT_SCHOOL,
     description:
       "This is about what happens once someone is accused of a crime: which charges are filed; " +
       "whether a person is held or released before trial; fines and court fees; sentence length " +
@@ -143,7 +147,7 @@ const ISSUES: Array<{
   {
     slug: "climate-energy",
     name: "Climate & Energy",
-    levels: ALL,
+    levels: NOT_SCHOOL,
     description:
       "These are decisions about electricity and fuel: which power sources a utility buys; what " +
       "customers pay and what happens when a bill goes unpaid; how the grid is kept running in " +
@@ -154,7 +158,7 @@ const ISSUES: Array<{
   {
     slug: "environment-water",
     name: "Environment & Water",
-    levels: ALL,
+    levels: NOT_SCHOOL,
     description:
       "This covers water, land, and waste: where drinking water comes from; what it must be " +
       "tested for; what households and businesses pay for water and sewer; whether watering is " +
@@ -176,7 +180,7 @@ const ISSUES: Array<{
   {
     slug: "voting-elections",
     name: "Voting & Elections",
-    levels: ALL,
+    levels: NOT_SCHOOL,
     description:
       "These are the rules for voting: who is eligible; how people get on and off the voter " +
       "list; how identity is confirmed at the polls; when and where polling places are open; " +
