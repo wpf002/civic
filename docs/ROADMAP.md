@@ -183,6 +183,26 @@ Decisions locked:
 
 ---
 
+## 5b. Build status (2026-09-04)
+
+What exists, against the phases below. Nothing here is a claim that a phase is *accepted* —
+acceptance criteria are unchanged and Phase 0's are not met.
+
+| Phase | Built | Not built |
+|---|---|---|
+| 0 | Editorial policy + summary style guide; 20 issue descriptions, adversarially audited; taxonomy changelog 0001–0004 | Legal entity (**blocking**), human second reader, `SOURCES.md`, fidelity test on 5 real sites |
+| 1 | Schema with roster provenance; statutory calendar generator; address→district verified live; DISD and City Secretary adapters; shrink guard; snapshot/diff persistence; heartbeat | Railway cron wiring; `SeatUpForElection` rows; City Secretary wired into `cli ingest`; roll-call ingest |
+| 2 | Two-model extraction to DRAFT with review tasks; verbatim gate; review console with publish/reject/supersede | Real auth on `/admin`; re-extraction on contentHash change; vote tagging |
+| 3 | All six public routes plus methodology, corrections, report; design system; OG share card; 9-test Playwright suite | Address input wired to district lookup; Lighthouse run |
+| 4–6 | — | — |
+
+A caveat worth carrying forward: the fixture models council seats as "District 7", but the
+certified ballot labels them "Place 7". Both terms are live — the GIS layer returns
+`DISTRICT`, the ballot order prints `Place`. Wiring the City Secretary adapter into
+`cli ingest` needs that reconciled first, which is why it parses but does not yet persist.
+
+---
+
 ## 6. Phases
 
 ### Phase 0 — Kill gate (2 weeks)

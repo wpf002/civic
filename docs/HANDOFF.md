@@ -73,7 +73,10 @@ candidate's website.
 - The corrections log renders and is empty by design — nothing has been superseded.
 - Roll-call votes have a schema and a UI section but no ingest adapter.
 - `/report` writes a UserReport; the review console does not read them yet.
-- The City Secretary adapter parses; it is not yet wired into `cli ingest` (DISD is).
+- The City Secretary adapter parses but does not yet persist. The blocker is a naming
+  reconciliation, not the parser: the fixture models council seats as "District 7" while
+  the certified ballot prints "Place 7", and the GIS layer returns `DISTRICT`. Both terms
+  are genuinely in use and the Race lookup needs to hold both before it can resolve.
 
 ## Reference
 
