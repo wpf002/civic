@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export type TickState = "stated" | "silent" | "unattempted";
+export type TickState = "stated" | "silent" | "declined" | "unattempted";
 
 /**
  * Coverage ticks.
@@ -37,7 +37,14 @@ export function CoverageTicks({
               ? { background: "var(--meter)" }
               : s === "silent"
                 ? { boxShadow: "inset 0 0 0 1px var(--rule-strong)" }
-                : {
+                : s === "declined"
+                  ? // A refusal is a filled outline: they answered us, the answer was no.
+                    {
+                      boxShadow: "inset 0 0 0 1px var(--rule-strong)",
+                      background:
+                        "repeating-linear-gradient(45deg, var(--rule-strong) 0 1px, transparent 1px 3px)",
+                    }
+                  : {
                     boxShadow: "inset 0 0 0 1px var(--rule)",
                     background:
                       "linear-gradient(to bottom right, transparent 45%, var(--rule-strong) 45% 55%, transparent 55%)",
@@ -60,6 +67,7 @@ export function CoverageMeter({
 }) {
   const stated = coverage.filter((c) => c.state === "stated").length;
   const silent = coverage.filter((c) => c.state === "silent").length;
+  const declined = coverage.filter((c) => c.state === "declined").length;
   const total = coverage.length;
 
   return (
@@ -76,6 +84,9 @@ export function CoverageMeter({
       <p className="mt-2 max-w-measure text-base text-ink">
         We found positions on {stated} of the {total} issues that apply to this office.
         {silent > 0 ? ` On ${silent}, ${subject} has not stated one.` : ""}
+        {declined > 0
+          ? ` On ${declined}, ${subject} was asked and declined to answer.`
+          : ""}
       </p>
     </div>
   );

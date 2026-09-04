@@ -295,11 +295,15 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
         return {
           slug: i.slug,
           name: i.name,
+          // A refusal is not silence. Collapsing them here would undo the whole
+          // reason DECLINED_TO_STATE exists.
           state: !p
             ? ("unattempted" as const)
-            : (SILENT as readonly string[]).includes(p.stance)
-              ? ("silent" as const)
-              : ("stated" as const),
+            : p.stance === "DECLINED_TO_STATE"
+              ? ("declined" as const)
+              : p.stance === "NO_STATED_POSITION"
+                ? ("silent" as const)
+                : ("stated" as const),
         };
       }),
       positions: c.positions.map(shapePosition),

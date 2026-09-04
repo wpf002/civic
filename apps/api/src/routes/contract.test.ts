@@ -119,3 +119,17 @@ describe("issue-per-office", () => {
     expect(taxes.races).toHaveLength(2);
   });
 });
+
+describe("coverage", () => {
+  it("counts a refusal separately from silence", async () => {
+    const c = (await app.inject({ url: "/v1/candidates/june-halvorsen" })).json();
+    const states = c.coverage.reduce((acc: any, x: any) => {
+      acc[x.state] = (acc[x.state] ?? 0) + 1;
+      return acc;
+    }, {});
+    // Halvorsen answered one issue, was silent on one, and refused on one.
+    expect(states.declined).toBe(1);
+    expect(states.silent).toBe(1);
+    expect(states.stated).toBe(1);
+  });
+});

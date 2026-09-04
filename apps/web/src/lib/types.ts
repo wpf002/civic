@@ -88,7 +88,7 @@ export type CandidateDetail = {
     isIncumbent: boolean;
     ballotOrder: number | null;
   }>;
-  coverage: Array<{ slug: string; name: string; state: "stated" | "silent" | "unattempted" }>;
+  coverage: Array<{ slug: string; name: string; state: "stated" | "silent" | "declined" | "unattempted" }>;
   positions: Position[];
   sourcesRead: SourceRow[];
   votes: Array<{

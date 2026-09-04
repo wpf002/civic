@@ -1,70 +1,74 @@
-# Handoff — 2026-09-03
+# Handoff — 2026-09-04
 
-Paused mid-task. Everything below is committed and pushed to `main`.
+Everything below is committed and pushed to `main`.
+
+## Running it
+
+```bash
+pnpm install
+docker compose up -d          # Postgres on host port 55432
+cp .env.example .env          # add ANTHROPIC_API_KEY (+ ANTHROPIC_WORKSPACE_ID if the key is identity-linked)
+pnpm db:migrate && pnpm db:seed
+pnpm --filter @civic/db seed:fixture   # synthetic Nov 2027 Dallas data
+pnpm dev                      # api :4000, web :3007
+```
+
+Ports are deliberate. 5432-5439 and 3000 are crowded on this machine and both
+collided silently mid-build — a foreign Postgres answered as an auth failure, and a
+foreign Next app answered as the wrong site.
 
 ## State
 
-| Thing | State |
+| | |
 |---|---|
-| Monorepo, Postgres, migration, seed | working (`docker compose up -d`, Postgres on **5433**) |
-| `pnpm typecheck` / `lint` / `test` / `build` | all green; 9 tests |
-| Model seam `packages/extract/src/llm.ts` | written, typechecks, **never made a successful live call** |
-| Public/admin API, web app | boot and serve; web is still the bootstrap placeholder page |
-| Position rows in DB | zero — correct for this stage |
+| Data spine | Schema, migrations, 20-issue taxonomy with written descriptions, synthetic Dallas fixture |
+| Extraction | Live. `pnpm --filter @civic/extract smoke` runs a document through opus-5 + sonnet-5, reconciles, asserts quote fidelity. ~3.3¢ per pair |
+| API | 12 endpoints, 8 contract tests including "`/v1` never returns a non-PUBLISHED position" |
+| Web | 12 routes, verified in a real browser at 375px |
+| Tests | 27 across core / extract / api |
 
-## Blocker: the Anthropic key is identity-linked
+## What is real and what is not
 
-Every request 400s with:
+The **fixture is synthetic**. Seven invented candidates. The offices, districts,
+election date and taxonomy are real; the people and their words are not, and
+`packages/db/src/fixtures/` must never be promoted to production data.
 
-    anthropic-workspace-id is required when authenticating with an identity-linked API key
+**No real position has ever been extracted.** The pipeline works end to end against a
+synthetic document. It has never seen a real candidate's website.
 
-Fix: put the workspace id in the repo-root `.env` (the slot is already there, and the
-SDK reads it automatically).
+## Phase 0 — still open
 
-    ANTHROPIC_WORKSPACE_ID=wrkspc_...
+1. **Legal entity. Blocking.** Civic has no entity and no funding model. IRS Rev. Rul.
+   78-248 / 2007-41 require candidate answers be *unedited* and bar the org from stating
+   its own position — an LLM-written summary is editing, and a weighted quiz ranking named
+   candidates is close to candidate rating. Under a c3 that is exposure in a 2028 Texas
+   cycle; under an LLC every grant source in this category closes. TRAIGA (effective
+   2026-01-01, penalties to $100k) is an untested surface for exactly this product.
+   Get a Texas nonprofit/election-law opinion before building further.
+2. **A human second reader on the taxonomy.** The 20 descriptions were audited by a model
+   arguing both sides. That is not the same as a person who would vote differently.
+3. **`data/manual/2027-11-dallas/SOURCES.md`** — the source inventory, now against a
+   November ballot.
+4. **Fidelity test.** Hand-label 5 real Dallas candidate sites, run them through
+   `extractOnce`, and record stance agreement and quote-validity in `docs/PHASE0_RESULTS.md`.
+   The kill criteria in the roadmap still stand.
+5. **Which DISD ArcGIS layer is authoritative.** Two public services disagree on the same
+   point (District 9 vs District 5); one has all-zero population fields. Ask DISD in
+   writing and record the answer.
 
-Found in Console → Settings → Workspaces. A non-identity-linked key needs no workspace id.
+## Known gaps in what was built
 
-Then verify the seam end to end — this makes two real model calls and costs a few
-tenths of a cent:
+- Address → district is a stub. The home page form posts straight to the election.
+- The corrections log renders but nothing has been superseded, so it is empty by design.
+- `/report` writes a UserReport; no admin surface reads them yet.
+- Roll-call votes have a schema and a UI section but no ingest adapter.
+- No Playwright suite. Browser verification so far has been manual and programmatic.
+- Review console (`/admin`) is not built. Phase 2.
 
-```bash
-pnpm --filter @civic/extract smoke
-```
+## Reference
 
-It runs a synthetic Dallas council statement through `claude-opus-5` and
-`claude-sonnet-5`, prints both extractions, reconciles them, and asserts every
-returned quote is verbatim in the source. That is the Phase 0 fidelity harness in
-miniature — once it passes, swap the synthetic document for the 5 hand-labeled
-real candidate sites.
-
-## Interrupted: landscape research
-
-A 27-agent research workflow was stopped partway. Completed agents are cached, so
-resuming replays them for free rather than re-running the searches:
-
-    Workflow({
-      scriptPath: "~/.claude/projects/-Users-willfoti-Documents-GitHub-civic/dd89ef1e-d137-4cba-9235-a244a3cbe463/workflows/scripts/civic-landscape-research-wf_084d9dca-c9d.js",
-      resumeFromRunId: "wf_084d9dca-c9d"
-    })
-
-It sweeps and deep-reads 12 angles — US national voter guides, local/municipal
-coverage, quiz and matching tools, international VAAs (Wahl-O-Mat, smartvote,
-StemWijzer, Vote Compass), the academic VAA literature, civic-tech orgs and
-funders, newsroom voter guides, election data infrastructure, shutdown
-post-mortems, USWDS/GOV.UK design systems, WCAG and plain-language standards, and
-youth outreach plus share-card mechanics — then produces a competitive/expert map,
-a design direction, and a completeness critic that spot-checks claims against live
-sources.
-
-Its output is the input to two things that have not started: the roadmap update
-and the real UI. `apps/web` is still the placeholder from bootstrap.
-
-## Next
-
-1. Set `ANTHROPIC_WORKSPACE_ID`, run the smoke check.
-2. Resume the research workflow; fold results into `docs/ROADMAP.md`.
-3. Build the design system and the six routes the roadmap names.
-4. Phase 0 acceptance is still open: `SOURCES.md`, issue descriptions (all 20 are
-   empty strings in the seed), a second reader on the taxonomy, and the fidelity
-   numbers in `docs/PHASE0_RESULTS.md`.
+- `docs/RESEARCH_2026-09.md` — 409 sources; competitors, experts, white space, and the
+  corrections a critic made to the sweep.
+- `docs/DESIGN.md` — the visual system, and the one spec in it that is wrong.
+- `docs/ROADMAP.md` — phases, now on the corrected November 2027 calendar.
+- `docs/TAXONOMY_CHANGELOG.md` — entries 0001-0004.
