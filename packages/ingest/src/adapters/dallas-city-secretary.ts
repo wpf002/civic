@@ -113,6 +113,8 @@ interface TextItem {
   s: string;
   x: number;
   y: number;
+  /** Advance width, in the same units as x. Needed to tell a word gap from a ligature. */
+  w: number;
 }
 
 /**
@@ -128,13 +130,18 @@ export async function extractPdfItems(data: Uint8Array): Promise<TextItem[]> {
   for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p);
     const content = await page.getTextContent();
-    for (const it of content.items as Array<{ str: string; transform: number[] }>) {
+    for (const it of content.items as Array<{
+      str: string;
+      width: number;
+      transform: number[];
+    }>) {
       if (!it.str.trim()) continue;
       items.push({
         s: it.str.replace(/\s+/g, " ").trim(),
-        x: Math.round(it.transform[4]!),
+        x: it.transform[4]!,
         // Offset by page so multi-page orders stay in order.
         y: Math.round(it.transform[5]!) - (p - 1) * 10_000,
+        w: it.width ?? 0,
       });
     }
   }
@@ -150,7 +157,15 @@ export async function extractPdfItems(data: Uint8Array): Promise<TextItem[]> {
  * missing candidate, and it blocks publication of that race rather than passing as
  * an absence nobody notices.
  */
-/** Group items onto shared baselines (±2pt) and join them left to right. */
+/**
+ * Group items onto shared baselines (±2pt) and join them left to right.
+ *
+ * The join is width-aware, and that is not a refinement. A PDF splits a word at
+ * every font or kerning change, so "Jefferson" arrives as "Je", "ff", "erson" with
+ * no gap between the pieces; joining unconditionally with a space puts
+ * `Lamar "Yaka" Je ff erson` on a ballot. A space is inserted only where the
+ * previous item's advance width leaves an actual gap before the next one starts.
+ */
 function mergeRows(items: TextItem[], tolerance = 2): TextItem[] {
   const sorted = [...items].sort((a, b) => b.y - a.y || a.x - b.x);
   const rows: TextItem[][] = [];
@@ -161,7 +176,16 @@ function mergeRows(items: TextItem[], tolerance = 2): TextItem[] {
   }
   return rows.map((r) => {
     const ordered = r.sort((a, b) => a.x - b.x);
-    return { s: ordered.map((i) => i.s).join(" ").replace(/\s+/g, " ").trim(), x: ordered[0]!.x, y: ordered[0]!.y };
+    let s = "";
+    let penX: number | null = null;
+    for (const it of ordered) {
+      // 0.5pt of slack absorbs rounding in the advance width without swallowing a
+      // real inter-word space, which is at least a couple of points wide.
+      if (penX !== null && it.x - penX > 0.5) s += " ";
+      s += it.s;
+      penX = it.x + it.w;
+    }
+    return { s: s.replace(/\s+/g, " ").trim(), x: ordered[0]!.x, y: ordered[0]!.y, w: 0 };
   });
 }
 

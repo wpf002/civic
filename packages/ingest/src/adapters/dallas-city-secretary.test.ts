@@ -236,3 +236,21 @@ describe("checks that a test double cannot remove", () => {
     ).rejects.toThrow(/is not a PDF/);
   });
 });
+
+describe("names split by the PDF's own kerning", () => {
+  it("does not manufacture a space inside a ligature", async () => {
+    const bytes = readFileSync(join(here, "dallas-ballot-order-2025.pdf"));
+    const places = parseBallotOrder(await extractPdfItems(new Uint8Array(bytes)));
+    const names = places.flatMap((p) => p.entries.map((e) => e.name));
+
+    // "Jefferson" arrives from pdfjs as "Je" + "ff" + "erson". Joining on baseline
+    // alone printed `Lamar "Yaka" Je ff erson` on a certified ballot roster.
+    expect(names).toContain('Lamar "Yaka" Jefferson');
+    expect(names.join(" ")).not.toMatch(/\bff\b/);
+
+    // And real word spacing still survives the width-aware join.
+    expect(names).toContain("Gay Donnell Willis");
+    expect(names).toContain('Nicolas "Nico" Quintanilla');
+    expect(names).toContain("Jose Rivas Jr");
+  });
+});
