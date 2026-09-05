@@ -1,22 +1,18 @@
 # Phase 0 fidelity test — labeling worksheet
 
-**You are the labeler. I am not.** These are *proposals*, drafted from the archived text by a
-reader that has never seen the extractor prompt. If I both wrote the labels and ran the
-extractor, the test would measure self-consistency and the number would mean nothing.
-
-## How to use this
-
-For each row, either leave it alone or change the stance — write your verdict in the
-**Your call** column. Anything left blank is taken as agreeing with the proposal.
-
-Only two things really need your attention:
-
-1. **The 25 rows marked `arguable`.** Those are where the draft reader could not decide between
-   two defensible stances, almost always SUPPORT vs STRONG_SUPPORT. That boundary is the single
-   biggest source of noise in this test.
-2. **Anything labelled NO_STATED_POSITION that you think is a real position, or the reverse.**
-   A wrong absence is worse than a wrong strength, because the product treats absence as a finding
-   and shows it to voters as one.
+> **Superseded by [../PHASE0_RESULTS.md](../PHASE0_RESULTS.md).** This file is kept because it
+> records one of the three label sets the test scored against, and because the reasoning column
+> is worth reading. Do not treat it as a task list.
+>
+> The original plan was for a person to adjudicate all 60 rows. Instead the page was labeled
+> twice more, independently, by readers with different rubrics and no sight of this file or of
+> the extractor prompt. Rows where all three agreed became the score; rows where they did not
+> are reported as contested rather than resolved, because averaging over a disagreement
+> manufactures a number.
+>
+> **This measures convergence between independently instructed readers. It does not establish
+> that any of them is right.** Fifteen of sixty rows are contested, and those are the only rows
+> where a person's judgment would change anything.
 
 The scale, as the draft reader was told to apply it:
 

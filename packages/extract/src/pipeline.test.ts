@@ -29,6 +29,34 @@ describe("extractOnce", () => {
     expect(out.rejected[0]?.reason).toBe("quote not found verbatim in source");
   });
 
+  it("costs one position, not the document, when a field runs over its cap", async () => {
+    const out = await extractOnce(
+      input,
+      "recorded",
+      replay([
+        {
+          issueSlug: "housing-cost-of-living",
+          stance: "SUPPORT",
+          // 301 characters. The transport schema used to enforce this, which meant the
+          // whole response failed to parse and every other position was lost with it.
+          summary: "x".repeat(301),
+          quote: "I will vote to legalize fourplexes citywide.",
+          confidence: 0.9,
+        },
+        {
+          issueSlug: "public-safety-policing",
+          stance: "NO_STATED_POSITION",
+          summary: "The page does not say.",
+          quote: "",
+          confidence: 0.8,
+        },
+      ]),
+    );
+    expect(out.positions.map((p) => p.issueSlug)).toEqual(["public-safety-policing"]);
+    expect(out.rejected).toHaveLength(1);
+    expect(out.rejected[0]?.reason).toMatch(/summary/);
+  });
+
   it("keeps a verbatim quote and drops an issue outside the taxonomy", async () => {
     const out = await extractOnce(
       input,

@@ -1,4 +1,9 @@
-import { ExtractionOutputSchema, findVerbatim, type ExtractedPosition } from "@civic/core";
+import {
+  ExtractedPositionSchema,
+  LenientExtractionOutputSchema,
+  findVerbatim,
+  type ExtractedPosition,
+} from "@civic/core";
 import { complete, type CompleteFn } from "./llm.js";
 import { EXTRACT_SYSTEM } from "./prompts/extract-positions.js";
 
@@ -27,12 +32,23 @@ export async function extractOnce(
     model,
     system: EXTRACT_SYSTEM,
     input: `ISSUES: ${input.issueSlugs.join(", ")}\n\nDOCUMENT:\n${input.sourceText}`,
-    schema: ExtractionOutputSchema,
+    schema: LenientExtractionOutputSchema,
   });
 
   const positions: ExtractedPosition[] = [];
   const rejected: ExtractOutcome["rejected"] = [];
-  for (const p of res.output.positions) {
+  for (const raw of res.output.positions) {
+    // Enforce the length caps here rather than at the transport layer, so one
+    // oversized field costs one position instead of the whole document.
+    const strict = ExtractedPositionSchema.safeParse(raw);
+    if (!strict.success) {
+      rejected.push({
+        position: raw as ExtractedPosition,
+        reason: strict.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+      });
+      continue;
+    }
+    const p = strict.data;
     if (!input.issueSlugs.includes(p.issueSlug)) {
       rejected.push({ position: p, reason: "unknown issue" });
       continue;

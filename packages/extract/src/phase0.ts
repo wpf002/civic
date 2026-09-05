@@ -24,13 +24,32 @@
  * Writes nothing to the database.
  */
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { prisma } from "@civic/db";
 import { MODEL_A, MODEL_B } from "./llm.js";
 import { extractOnce, reconcile } from "./pipeline.js";
 
 export const ABSENT = "NO_STATED_POSITION";
+
+/**
+ * Resolve a path against the repository root, not the current directory.
+ *
+ * pnpm runs a package script from that package's directory, so "docs/phase0" means
+ * something different depending on where the command was typed. The archive has one
+ * location; make the path mean one thing.
+ */
+export function fromRepoRoot(p: string): string {
+  if (isAbsolute(p)) return p;
+  let dir = dirname(fileURLToPath(import.meta.url));
+  while (!existsSync(join(dir, "pnpm-workspace.yaml"))) {
+    const up = dirname(dir);
+    if (up === dir) return resolve(p);
+    dir = up;
+  }
+  return join(dir, p);
+}
 
 /** One reader's opinion of one candidate × issue. */
 export interface Label {
@@ -58,7 +77,8 @@ export interface ArchivedDoc {
  * a fidelity test, so a mismatch is fatal rather than a warning.
  */
 export function loadArchive(dir: string, slugs: string[]): ArchivedDoc[] {
-  const manifest = JSON.parse(readFileSync(join(dir, "archive-manifest.json"), "utf8")) as Array<{
+  const root = fromRepoRoot(dir);
+  const manifest = JSON.parse(readFileSync(join(root, "archive-manifest.json"), "utf8")) as Array<{
     slug: string;
     candidate: string;
     url: string;
@@ -69,7 +89,7 @@ export function loadArchive(dir: string, slugs: string[]): ArchivedDoc[] {
   return slugs.map((slug) => {
     const entry = manifest.find((m) => m.slug === slug);
     if (!entry) throw new Error(`${slug} is not in archive-manifest.json`);
-    const text = readFileSync(join(dir, `${slug}.txt`), "utf8");
+    const text = readFileSync(join(root, `${slug}.txt`), "utf8");
     const hash = createHash("sha256").update(text).digest("hex");
     if (hash !== entry.contentHash) {
       throw new Error(
@@ -83,7 +103,7 @@ export function loadArchive(dir: string, slugs: string[]): ArchivedDoc[] {
 
 /** Read the worksheet's label file, which keys candidates by display name. */
 export function loadProposedLabels(path: string, docs: ArchivedDoc[]): LabelSet {
-  const raw = JSON.parse(readFileSync(path, "utf8")) as Array<{
+  const raw = JSON.parse(readFileSync(fromRepoRoot(path), "utf8")) as Array<{
     candidate: string;
     labels: Array<{ issueSlug: string; stance: string; quote?: string; confidenceInLabel?: string }>;
   }>;
@@ -138,8 +158,8 @@ export interface Cell {
 export interface ExtractionRun {
   cells: Cell[];
   costCents: number;
-  /** Quotes a model returned that were not spans of the archived document. */
-  rejected: Array<{ slug: string; issueSlug: string; reason: string }>;
+  /** Positions a model returned that were thrown out before anything was stored. */
+  rejected: Array<{ slug: string; issueSlug: string; reason: string; quote: string }>;
   quotesOffered: number;
 }
 
@@ -166,7 +186,12 @@ export async function runExtractors(
     for (const [outcome] of [[a], [b]] as const) {
       quotesOffered += outcome.positions.filter((p) => p.stance !== ABSENT).length + outcome.rejected.length;
       for (const r of outcome.rejected) {
-        rejected.push({ slug: doc.slug, issueSlug: r.position.issueSlug, reason: r.reason });
+        rejected.push({
+          slug: doc.slug,
+          issueSlug: r.position.issueSlug,
+          reason: r.reason,
+          quote: r.position.quote ?? "",
+        });
       }
     }
 
@@ -228,6 +253,15 @@ export interface Report {
   /** Of rows the readers agreed carried a real stance, how often the pipeline said silence. */
   falseAbsence: number;
   statedRows: number;
+  /**
+   * Of rows the readers agreed were silent, how often the pipeline asserted a stance.
+   *
+   * The worst error this product can make. A missed position is a gap a voter can see;
+   * an invented one is a claim about a candidate that the document does not support.
+   */
+  falsePresence: number;
+  /** Rows the pipeline answered wrongly, as opposed to declining to answer. */
+  wrongAnswers: number;
   /** Rows where the two models disagreed, so the pipeline produced no answer at all. */
   flaggedRows: number;
   /** Share of rows on which every label set gave the same stance. */
@@ -290,6 +324,11 @@ export function score(cells: Cell[], labelSets: Map<string, LabelSet>): Report {
     absenceRows: absence.length,
     falseAbsence: pct(stated.filter((r) => r.pipeline === ABSENT).length, stated.length),
     statedRows: stated.length,
+    falsePresence: pct(
+      absence.filter((r) => r.pipeline !== ABSENT && r.pipeline !== "FLAGGED").length,
+      absence.length,
+    ),
+    wrongAnswers: scored.filter((r) => !r.exact && r.pipeline !== "FLAGGED").length,
     flaggedRows: rows.filter((r) => r.pipeline === "FLAGGED").length,
     unanimityRate,
   };

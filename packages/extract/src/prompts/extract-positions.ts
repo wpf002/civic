@@ -11,6 +11,8 @@ Rules:
   candidate's words exactly: same words, same order, same punctuation. Do not fix typos, do not
   change quotation marks or dashes, do not paraphrase, do not join text from separate passages.
   Line breaks inside the passage do not matter — you may keep them or replace them with a space.
+- "summary" must be 300 characters or fewer, and "quote" 500 or fewer. A position that
+  exceeds either is discarded, so keep both inside the limit rather than running over.
 - "summary" is at most two plain sentences describing what the candidate says they will do or
   believe. No adjectives about the candidate. No inference about motive. Do not assert that the
   policy would work.

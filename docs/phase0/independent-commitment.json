@@ -1,0 +1,327 @@
+[
+ {
+  "candidate": "chad-west",
+  "labels": [
+   {
+    "issueSlug": "economy-jobs",
+    "stance": "STRONG_SUPPORT",
+    "quote": "Increase starting salaries and improve health benefits to retain quality talent"
+   },
+   {
+    "issueSlug": "housing-cost-of-living",
+    "stance": "STRONG_SUPPORT",
+    "quote": "Supports inclusionary zoning to induce developers to add affordable housing stock to new construction projects"
+   },
+   {
+    "issueSlug": "taxes-budget",
+    "stance": "STRONG_SUPPORT",
+    "quote": "Identify wasteful spending in our city\u2019s budget and redirect funds to public safety salaries"
+   },
+   {
+    "issueSlug": "public-safety-policing",
+    "stance": "STRONG_SUPPORT",
+    "quote": "Increase staff numbers of community police officers to improve relationships between communities and law enforcement"
+   },
+   {
+    "issueSlug": "criminal-justice",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "climate-energy",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "environment-water",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "transportation-infrastructure",
+    "stance": "STRONG_SUPPORT",
+    "quote": "Will fight for funding to add sidewalks and pedestrian connectivity where there are no pedestrian routes, prioritizing those that would extend safe routes to schools."
+   },
+   {
+    "issueSlug": "voting-elections",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "lgbtq-rights",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "civil-rights",
+    "stance": "SUPPORT",
+    "quote": "Furthermore, we must provide visionary leadership and training that helps improve sensitivity to diverse groups."
+   },
+   {
+    "issueSlug": "local-development-zoning",
+    "stance": "MIXED",
+    "quote": "I have never and will never support a project that involves tearing down single-family homes and upzoning the lots."
+   }
+  ]
+ },
+ {
+  "candidate": "jeff-kitner",
+  "labels": [
+   {
+    "issueSlug": "economy-jobs",
+    "stance": "SUPPORT",
+    "quote": "Smart tax incentives tied to specific goals can encourage builders to stay on schedule and keep costs in check."
+   },
+   {
+    "issueSlug": "housing-cost-of-living",
+    "stance": "SUPPORT",
+    "quote": "adding more housing near public transit and other public spaces"
+   },
+   {
+    "issueSlug": "taxes-budget",
+    "stance": "OPPOSE",
+    "quote": "I do not support raising property taxes and would like to see continued reductions of property taxes."
+   },
+   {
+    "issueSlug": "public-safety-policing",
+    "stance": "STRONG_SUPPORT",
+    "quote": "Jeff will fight to increase the number of police officers on the force and will collaborate with the Dallas Police Department to ensure that officers have the resources they need"
+   },
+   {
+    "issueSlug": "criminal-justice",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "climate-energy",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "environment-water",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "transportation-infrastructure",
+    "stance": "SUPPORT",
+    "quote": "Debt from bonds is a significant component of our city budget, and I believe we should pay for infrastructure maintenance primarily out of the operating budget instead."
+   },
+   {
+    "issueSlug": "voting-elections",
+    "stance": "STRONG_SUPPORT",
+    "quote": "to include a City Charter Amendment to move our local elections to November of odd-numbered years. This amendment will benefit the city by increasing voter turnout, reducing voter fatigue, and saving Dallas residents over $400,000."
+   },
+   {
+    "issueSlug": "lgbtq-rights",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "civil-rights",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "local-development-zoning",
+    "stance": "MIXED",
+    "quote": "In the dense areas near Downtown and Uptown, I would support a reduction of parking minimums to encourage more pedestrian and bicycle traffic. That approach would not be appropriate in less dense areas of the city, including most of District 11."
+   }
+  ]
+ },
+ {
+  "candidate": "bill-roth",
+  "labels": [
+   {
+    "issueSlug": "economy-jobs",
+    "stance": "SUPPORT",
+    "quote": "By attracting new businesses and growing the commercial tax base, the city can generate the needed funds to provide essential services while lowering the tax burden on residential property owners."
+   },
+   {
+    "issueSlug": "housing-cost-of-living",
+    "stance": "OPPOSE",
+    "quote": "While open to thoughtful development in appropriate areas, Bill opposes the forced introduction of high-density housing into established residential zones."
+   },
+   {
+    "issueSlug": "taxes-budget",
+    "stance": "STRONG_SUPPORT",
+    "quote": "Dallas must hold the line on increasing taxes with the goal of cutting taxes. Bill believes in cutting wasteful spending and conducting departmental audits."
+   },
+   {
+    "issueSlug": "public-safety-policing",
+    "stance": "SUPPORT",
+    "quote": "Bill supports increasing the number of patrol police officers and ensuring our fire personnel are well-equipped to respond to emergencies."
+   },
+   {
+    "issueSlug": "criminal-justice",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "climate-energy",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "environment-water",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "transportation-infrastructure",
+    "stance": "STRONG_SUPPORT",
+    "quote": "He\u2019ll focus on streamlining city services, prioritizing road and sidewalk repairs, modernizing traffic signals, and increasing transparency in how public works are executed."
+   },
+   {
+    "issueSlug": "voting-elections",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "lgbtq-rights",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "civil-rights",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "local-development-zoning",
+    "stance": "STRONG_OPPOSE",
+    "quote": "He believes land use changes should be driven by community input, not top-down mandates, and will fight to ensure residents\u2019 voices guide neighborhood planning, not bureaucrats or developers pushing unwanted density."
+   }
+  ]
+ },
+ {
+  "candidate": "paula-blackmon",
+  "labels": [
+   {
+    "issueSlug": "economy-jobs",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "housing-cost-of-living",
+    "stance": "SUPPORT",
+    "quote": "In order to reduce the burden of property taxes on our neighbors, we must look to state and local solutions."
+   },
+   {
+    "issueSlug": "taxes-budget",
+    "stance": "SUPPORT",
+    "quote": "In order to reduce the burden of property taxes on our neighbors, we must look to state and local solutions."
+   },
+   {
+    "issueSlug": "public-safety-policing",
+    "stance": "SUPPORT",
+    "quote": "I will\nwork to make sure that the Dallas Police Department and the Dallas Fire and Rescue\nDepartment have the resources they need to recruit, retain and train our public\nsafety personnel"
+   },
+   {
+    "issueSlug": "criminal-justice",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "climate-energy",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "environment-water",
+    "stance": "SUPPORT",
+    "quote": "I will prioritize the overall health and wellbeing of our lake so that it continues to be the premier green space of our City."
+   },
+   {
+    "issueSlug": "transportation-infrastructure",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "voting-elections",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "lgbtq-rights",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "civil-rights",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "local-development-zoning",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   }
+  ]
+ },
+ {
+  "candidate": "adam-bazaldua",
+  "labels": [
+   {
+    "issueSlug": "economy-jobs",
+    "stance": "SUPPORT",
+    "quote": "Smart Economic Growth \u2013 Attracting local businesses, supporting small entrepreneurs, and ensuring development benefits our residents"
+   },
+   {
+    "issueSlug": "housing-cost-of-living",
+    "stance": "SUPPORT",
+    "quote": "Tackling Homelessness & Housing Challenges \u2013 Advocating for long-term solutions that provide real pathways to stability"
+   },
+   {
+    "issueSlug": "taxes-budget",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "public-safety-policing",
+    "stance": "SUPPORT",
+    "quote": "Safer Streets & Stronger Neighborhoods \u2013 Investing in infrastructure, reducing crime, and expanding community-based safety initiatives"
+   },
+   {
+    "issueSlug": "criminal-justice",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "climate-energy",
+    "stance": "SUPPORT",
+    "quote": "Investing in Infrastructure & Sustainability \u2013 Improving roads, bike lanes, and public transit, and pushing for a cleaner, greener Dallas"
+   },
+   {
+    "issueSlug": "environment-water",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "transportation-infrastructure",
+    "stance": "SUPPORT",
+    "quote": "Improving roads, bike lanes, and public transit"
+   },
+   {
+    "issueSlug": "voting-elections",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "lgbtq-rights",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "civil-rights",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   },
+   {
+    "issueSlug": "local-development-zoning",
+    "stance": "NO_STATED_POSITION",
+    "quote": ""
+   }
+  ]
+ }
+]

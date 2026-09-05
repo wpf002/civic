@@ -9,6 +9,7 @@ import {
   loadArchive,
   loadLabelsBySlug,
   loadProposedLabels,
+  fromRepoRoot,
   runExtractors,
   score,
   type LabelSet,
@@ -67,7 +68,8 @@ program
       ["commitment", `${o.dir}/independent-commitment.json`],
       ["voter", `${o.dir}/independent-voter.json`],
     ] as const) {
-      if (existsSync(file)) labelSets.set(name, loadLabelsBySlug(JSON.parse(readFileSync(file, "utf8"))));
+      const abs = fromRepoRoot(file);
+      if (existsSync(abs)) labelSets.set(name, loadLabelsBySlug(JSON.parse(readFileSync(abs, "utf8"))));
     }
 
     console.log(
@@ -88,10 +90,12 @@ program
     for (const [m, v] of Object.entries(report.modelAgreement)) console.log(`  ${m.padEnd(20)} ${p(v)}`);
     console.log(`absence accuracy    ${p(report.absenceAccuracy)} of ${report.absenceRows} silent rows`);
     console.log(`false absence       ${p(report.falseAbsence)} of ${report.statedRows} stated rows`);
+    console.log(`false presence      ${p(report.falsePresence)} of ${report.absenceRows} silent rows`);
+    console.log(`wrong answers       ${report.wrongAnswers} of ${report.scoredRows} scored rows`);
     console.log(`model disagreement  ${report.flaggedRows} rows produced no answer`);
     console.log(`cost                ${run.costCents.toFixed(2)}c total · ${(run.costCents / docs.length).toFixed(2)}c per candidate`);
 
-    writeFileSync(o.out, renderResults({ docs, issueSlugs, run, report, quoteValidity, labelSets }));
+    writeFileSync(fromRepoRoot(o.out), renderResults({ docs, issueSlugs, run, report, quoteValidity, labelSets }));
     console.log(`\nwrote ${o.out}`);
     await prisma.$disconnect();
   });
@@ -135,7 +139,9 @@ function renderResults(x: {
   L.push(`| Stance agreement, exact | ${p(x.report.exactAgreement)} | yes |`);
   L.push(`| Stance agreement, direction only | ${p(x.report.directionAgreement)} | yes |`);
   L.push(`| Absence accuracy | ${p(x.report.absenceAccuracy)} of ${x.report.absenceRows} silent rows | little |`);
-  L.push(`| False absence | ${p(x.report.falseAbsence)} of ${x.report.statedRows} stated rows | little |`);
+  L.push(`| False absence — said silent, readers saw a stance | ${p(x.report.falseAbsence)} of ${x.report.statedRows} stated rows | little |`);
+  L.push(`| **False presence — asserted a stance the readers did not see** | **${p(x.report.falsePresence)} of ${x.report.absenceRows} silent rows** | little |`);
+  L.push(`| Wrong answers (excludes rows it declined to answer) | ${x.report.wrongAnswers} of ${x.report.scoredRows} | yes |`);
   L.push(`| Rows with no answer (models disagreed) | ${x.report.flaggedRows} | none |`);
   L.push(`| Rows contested between readers | ${x.report.contestedRows} of ${x.report.rows.length} | — |`);
   L.push(`| Cost per candidate | ${(x.run.costCents / x.docs.length).toFixed(2)}c | none |`);
@@ -188,7 +194,10 @@ function renderResults(x: {
     L.push("");
     L.push("| Candidate | Issue | Reason |");
     L.push("|---|---|---|");
-    for (const r of x.run.rejected) L.push(`| ${r.slug} | \`${r.issueSlug}\` | ${r.reason} |`);
+    for (const r of x.run.rejected) {
+      L.push(`| ${r.slug} | \`${r.issueSlug}\` | ${r.reason} |`);
+      if (r.quote) L.push(`| | | offered: ${JSON.stringify(r.quote.slice(0, 220))} |`);
+    }
     L.push("");
   }
 
