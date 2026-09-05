@@ -531,6 +531,14 @@ async function seedRace(opts: {
   jurisdictionId: string;
   districtName: string;
   officeTitle: string;
+  /**
+   * The term the certified ballot prints for this seat, e.g. "Place 7".
+   *
+   * Held as data because it is not derivable from the district: both terms are in
+   * real use for Dallas council seats and `packages/ingest/src/seats.ts` matches on
+   * this string exactly rather than converting a district number into a place.
+   */
+  seatLabel?: string;
   termYears: number;
   electionId: string;
   people: Person[];
@@ -549,8 +557,15 @@ async function seedRace(opts: {
       districtId: district.id,
       title: opts.officeTitle,
       termYears: opts.termYears,
+      ...(opts.seatLabel ? { seatLabel: opts.seatLabel } : {}),
     },
   });
+  if (opts.seatLabel && office.seatLabel !== opts.seatLabel) {
+    office = await prisma.office.update({
+      where: { id: office.id },
+      data: { seatLabel: opts.seatLabel },
+    });
+  }
   const race = await prisma.race.upsert({
     where: { electionId_officeId: { electionId: opts.electionId, officeId: office.id } },
     update: {},
@@ -669,6 +684,7 @@ export async function seedFixture() {
     jurisdictionId: city.id,
     districtName: "District 7",
     officeTitle: "Dallas City Council Member",
+    seatLabel: "Place 7",
     termYears: 4,
     electionId: election.id,
     people: PEOPLE_D7,

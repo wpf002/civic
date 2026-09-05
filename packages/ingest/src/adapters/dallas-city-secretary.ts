@@ -19,7 +19,7 @@
  *
  * Dallas council seats are PLACES (1–14 plus Place 15, the Mayor), not "Districts".
  */
-import { nameKey, type RosterEntry } from "../roster.js";
+import { nameKey, type Roster, type RosterEntry } from "../roster.js";
 
 const ORIGIN = "https://citysecretary2.dallascityhall.com";
 export const ELECTIONS_ROOT = `${ORIGIN}/pdf/Elections`;
@@ -318,3 +318,166 @@ function editDistanceAtMost(a: string, b: string, max: number): boolean {
 export const yearUrl = (year: number) => `${ELECTIONS_ROOT}/${year}/`;
 export const appsUrl = (year: number) => `${ELECTIONS_ROOT}/${year}/APPS/`;
 export const ballotOrderUrl = (year: number) => `${ELECTIONS_ROOT}/${year}/BallotOrder.pdf`;
+
+// ---------------------------------------------------------------- persistence
+
+/**
+ * Ballot "Place N" → race key.
+ *
+ * "Place" is NOT treated as a synonym for "District". Both terms are genuinely in
+ * use for the same seats — the certified ballot prints "Place 7", the GIS layer
+ * returns DISTRICT 7, and the two are not guaranteed to line up for every seat in
+ * every cycle (Place 15 carries the at-large mayoralty, which has no district at
+ * all). Nothing in this file converts one into the other.
+ *
+ * The mapping lives in the database as `Office.seatLabel`, entered by a person. A
+ * Place with no matching seatLabel resolves to nothing and quarantines, which is
+ * the correct outcome: a roster attached to the wrong race is worse than a roster
+ * that waits for someone to say which race it belongs to.
+ */
+export const placeRaceKey = (place: string): string => `dallas-council-place-${Number(place)}`;
+
+/** The seatLabel a Place must match, verbatim. */
+export const placeSeatLabel = (place: string): string => `Place ${Number(place)}`;
+
+/** Which document a roster was read off. Filed and certified are never unioned. */
+export type RosterBasis = "FILED" | "CERTIFIED";
+
+/**
+ * Build rosters from the certified ballot order.
+ *
+ * Placeholder lines are carried through, not dropped. An unnamed line on a ballot
+ * means the parse is short a person, and `diffRoster` quarantines on placeholders
+ * so that race waits for a human instead of publishing a roster missing someone.
+ */
+export function certifiedRosters(
+  places: CertifiedPlace[],
+  sourceUrl: string,
+  observedAt: Date,
+): Roster[] {
+  return places.map((p) => ({
+    raceKey: placeRaceKey(p.place),
+    entries: p.entries.map((e) => ({ ...e, sourceUrl })),
+    sourceUrl,
+    observedAt,
+  }));
+}
+
+/**
+ * Build rosters from the filed applications.
+ *
+ * Used only before certification, when BallotOrder.pdf does not exist yet. These
+ * names come from PDF filenames — see `parseFiledApplications` — so they carry no
+ * ballot order and are never marked certified downstream.
+ */
+export function filedRosters(
+  filed: FiledApplication[],
+  sourceUrl: string,
+  observedAt: Date,
+): Roster[] {
+  const byPlace = new Map<string, FiledApplication[]>();
+  for (const f of filed) {
+    const list = byPlace.get(f.place) ?? [];
+    list.push(f);
+    byPlace.set(f.place, list);
+  }
+  return [...byPlace.entries()]
+    .sort((a, b) => Number(a[0]) - Number(b[0]))
+    .map(([place, apps]) => ({
+      raceKey: placeRaceKey(place),
+      entries: apps.map((a) => ({ key: nameKey(a.name), name: a.name, sourceUrl: a.url })),
+      sourceUrl,
+      observedAt,
+    }));
+}
+
+export interface CouncilRosterRun {
+  basis: RosterBasis;
+  rosters: Roster[];
+  filed: FiledApplication[];
+  certified: CertifiedPlace[];
+  /** Filed-vs-certified differences. Surfaced, never merged away. */
+  reconciliation: FiledVsCertified[];
+  sourceUrl: string;
+}
+
+/** Transport only. The checks that make a response trustworthy are in the caller. */
+async function fetchListing(url: string): Promise<string> {
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok) throw new Error(`${url} returned ${res.status}`);
+  return res.text();
+}
+
+/** Transport only. `null` means 404 — not certified yet, which is a real state. */
+async function fetchPdf(url: string): Promise<Uint8Array | null> {
+  const res = await fetch(url, { redirect: "follow" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`${url} returned ${res.status}`);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+/**
+ * Assert a directory listing is the listing.
+ *
+ * Deliberately NOT inside `fetchListing`: a check that lives in an injectable
+ * dependency is a check a test double removes, and then the guard exists only on
+ * the path nobody exercises. It runs on whatever HTML arrives, however it arrived.
+ */
+function assertListing(html: string, url: string): void {
+  if (!html.includes(LISTING_MARKER)) {
+    throw new Error(
+      `${url} did not contain "${LISTING_MARKER}". A 200 is not evidence that a page is ` +
+        `the page — treating this as a failed fetch rather than as an empty directory.`,
+    );
+  }
+}
+
+/** Same reasoning. An HTML error page parses as a PDF with zero places on it. */
+function assertPdf(bytes: Uint8Array, url: string): void {
+  const magic = String.fromCharCode(...bytes.slice(0, 5));
+  if (magic !== "%PDF-") {
+    throw new Error(`${url} is not a PDF (starts with ${JSON.stringify(magic)})`);
+  }
+}
+
+/**
+ * Fetch one cycle's council roster.
+ *
+ * Prefers the certified ballot when it exists. Before certification the filed
+ * applications are the roster; after it, they are only a cross-check, because in
+ * 2025 four people filed and did not appear on the ballot.
+ */
+export async function fetchCouncilRoster(
+  year: number,
+  observedAt: Date,
+  deps: {
+    fetchListingImpl?: (url: string) => Promise<string>;
+    fetchPdfImpl?: (url: string) => Promise<Uint8Array | null>;
+  } = {},
+): Promise<CouncilRosterRun> {
+  const getListing = deps.fetchListingImpl ?? fetchListing;
+  const getPdf = deps.fetchPdfImpl ?? fetchPdf;
+
+  const appsHtml = await getListing(appsUrl(year));
+  assertListing(appsHtml, appsUrl(year));
+  const filed = dedupeFiled(parseFiledApplications(parseDirectoryListing(appsHtml)));
+
+  const pdf = await getPdf(ballotOrderUrl(year));
+  if (pdf) assertPdf(pdf, ballotOrderUrl(year));
+  const certified = pdf ? parseBallotOrder(await extractPdfItems(pdf)) : [];
+
+  const basis: RosterBasis = certified.length > 0 ? "CERTIFIED" : "FILED";
+  const sourceUrl = basis === "CERTIFIED" ? ballotOrderUrl(year) : appsUrl(year);
+
+  return {
+    basis,
+    sourceUrl,
+    filed,
+    certified,
+    reconciliation: reconcile(filed, certified),
+    rosters:
+      basis === "CERTIFIED"
+        ? certifiedRosters(certified, sourceUrl, observedAt)
+        : filedRosters(filed, sourceUrl, observedAt),
+  };
+}

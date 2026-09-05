@@ -73,10 +73,13 @@ candidate's website.
 - The corrections log renders and is empty by design — nothing has been superseded.
 - Roll-call votes have a schema and a UI section but no ingest adapter.
 - `/report` writes a UserReport; the review console does not read them yet.
-- The City Secretary adapter parses but does not yet persist. The blocker is a naming
-  reconciliation, not the parser: the fixture models council seats as "District 7" while
-  the certified ballot prints "Place 7", and the GIS layer returns `DISTRICT`. Both terms
-  are genuinely in use and the Race lookup needs to hold both before it can resolve.
+- The City Secretary adapter now persists. The Place/District naming reconciliation is
+  resolved by holding the ballot term as data on `Office.seatLabel` and matching it
+  exactly (`packages/ingest/src/seats.ts`); nothing converts "Place 7" into "District 7"
+  by arithmetic, and a Place with no seatLabel quarantines rather than guessing. Only
+  Place 7 is mapped in the fixture, so a real run against the 2025 documents resolves one
+  race and quarantines the rest — which is the intended state until the November 2027
+  seats are entered with their citation (item 3 above).
 
 ## Reference
 

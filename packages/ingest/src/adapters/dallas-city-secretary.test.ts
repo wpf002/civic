@@ -11,8 +11,14 @@ import {
   parseDirectoryListing,
   parseFiledApplications,
   reconcile,
+  appsUrl,
+  certifiedRosters,
+  fetchCouncilRoster,
+  filedRosters,
   type CertifiedPlace,
 } from "./dallas-city-secretary.js";
+import { diffRoster } from "../roster.js";
+import { seatLabelForRaceKey } from "../seats.js";
 
 const here = join(fileURLToPath(new URL(".", import.meta.url)), "__fixtures__");
 const appsHtml = readFileSync(join(here, "dallas-apps-2025.html"), "utf8");
@@ -135,5 +141,98 @@ describe("urls", () => {
     expect(ballotOrderUrl(2027)).toBe(
       "https://citysecretary2.dallascityhall.com/pdf/Elections/2027/BallotOrder.pdf",
     );
+  });
+});
+
+describe("rosters for persistence", () => {
+  let certified: CertifiedPlace[];
+  beforeAll(async () => {
+    const bytes = readFileSync(join(here, "dallas-ballot-order-2025.pdf"));
+    certified = parseBallotOrder(await extractPdfItems(new Uint8Array(bytes)));
+  });
+
+  it("keys a roster by the ballot's own term, never by a district number", () => {
+    const rosters = certifiedRosters(certified, ballotOrderUrl(2025), new Date("2025-03-01"));
+    expect(rosters.map((r) => r.raceKey)).toContain("dallas-council-place-7");
+    // Nothing in this package converts Place into District. If it ever does, this fails.
+    expect(rosters.map((r) => r.raceKey).join(" ")).not.toMatch(/district/i);
+  });
+
+  it("carries unnamed ballot lines through so the race quarantines", () => {
+    const rosters = certifiedRosters(certified, ballotOrderUrl(2025), new Date("2025-03-01"));
+    const withPlaceholders = rosters.filter((r) => r.entries.some((e) => e.isPlaceholder));
+    expect(withPlaceholders.length).toBeGreaterThan(0);
+    for (const r of withPlaceholders) {
+      expect(diffRoster(null, r).verdict).toBe("QUARANTINED");
+    }
+  });
+
+  it("builds a filed roster when there is no certified ballot yet", () => {
+    const filed = dedupeFiled(parseFiledApplications(parseDirectoryListing(appsHtml)));
+    const rosters = filedRosters(filed, appsUrl(2025), new Date("2025-02-01"));
+    const place1 = rosters.find((r) => r.raceKey === "dallas-council-place-1");
+    expect(place1!.entries.map((e) => e.name).sort()).toEqual([
+      "Chad West",
+      "Jason Vanhof",
+      "Katrina Whatley",
+    ]);
+    // Filed names come from PDF filenames and carry no ballot order.
+    expect(place1!.entries.every((e) => e.ballotOrder === undefined)).toBe(true);
+  });
+
+  it("prefers the certified ballot and never unions it with the filed list", async () => {
+    const bytes = readFileSync(join(here, "dallas-ballot-order-2025.pdf"));
+    const run = await fetchCouncilRoster(2025, new Date("2025-03-01"), {
+      fetchListingImpl: async () => appsHtml,
+      fetchPdfImpl: async () => new Uint8Array(bytes),
+    });
+    expect(run.basis).toBe("CERTIFIED");
+    expect(run.sourceUrl).toBe(ballotOrderUrl(2025));
+
+    // The 2025 filed-only people must not appear in the roster — only in the
+    // reconciliation, where a human sees them.
+    const filedOnly = run.reconciliation.flatMap((r) => r.filedOnly);
+    expect(filedOnly.length).toBeGreaterThan(0);
+    const names = new Set(run.rosters.flatMap((r) => r.entries.map((e) => e.name)));
+    for (const n of filedOnly) expect(names.has(n)).toBe(false);
+  });
+
+  it("falls back to filed when BallotOrder.pdf does not exist yet", async () => {
+    const run = await fetchCouncilRoster(2027, new Date("2027-08-01"), {
+      fetchListingImpl: async () => appsHtml,
+      fetchPdfImpl: async () => null,
+    });
+    expect(run.basis).toBe("FILED");
+    expect(run.certified).toEqual([]);
+    expect(run.rosters.length).toBeGreaterThan(0);
+  });
+
+  it("refuses a listing that does not carry the marker", async () => {
+    await expect(
+      fetchCouncilRoster(2025, new Date(), {
+        fetchListingImpl: async () => "<html>Service Unavailable</html>",
+        fetchPdfImpl: async () => null,
+      }),
+    ).rejects.toThrow(/did not contain/);
+  });
+});
+
+describe("seat labels", () => {
+  it("maps a race key to the label a person entered, and rejects anything else", () => {
+    expect(seatLabelForRaceKey("dallas-council-place-7")).toBe("Place 7");
+    expect(seatLabelForRaceKey("dallas-council-place-15")).toBe("Place 15");
+    expect(seatLabelForRaceKey("disd-trustee-5")).toBeNull();
+    expect(seatLabelForRaceKey("dallas-council-district-7")).toBeNull();
+  });
+});
+
+describe("checks that a test double cannot remove", () => {
+  it("refuses an HTML error page served in place of the ballot order", async () => {
+    await expect(
+      fetchCouncilRoster(2025, new Date(), {
+        fetchListingImpl: async () => appsHtml,
+        fetchPdfImpl: async () => new TextEncoder().encode("<html>Service Unavailable</html>"),
+      }),
+    ).rejects.toThrow(/is not a PDF/);
   });
 });

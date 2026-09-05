@@ -4,6 +4,8 @@ import { persistRun } from "./run.js";
 import { novemberCalendar, mayCalendar, iso, deadlinesNeedingReview } from "./adapters/tx-uniform-dates.js";
 import { resolveDistricts } from "./adapters/districts.js";
 import { fetchIsdRoster } from "./adapters/dallas-isd.js";
+import { fetchCouncilRoster } from "./adapters/dallas-city-secretary.js";
+import { resolveCouncilSeat } from "./seats.js";
 import { diffRoster } from "./roster.js";
 
 const program = new Command("civic-ingest");
@@ -62,30 +64,55 @@ program
 program
   .command("ingest")
   .description("Fetch a roster and PERSIST it: snapshot, diff, and apply if additive.")
-  .requiredOption("--adapter <name>", "dallas-isd")
+  .requiredOption("--adapter <name>", "dallas-isd | dallas-city-secretary")
   .requiredOption("--election <slug>", "e.g. 2027-11-dallas")
   .requiredOption("--date <yyyy-mm-dd>", "the election date the source must match")
   .option("--dry-run")
   .action(async (o) => {
-    if (o.adapter !== "dallas-isd") throw new Error(`unknown adapter ${o.adapter}`);
-    const run = await fetchIsdRoster(o.date, new Date());
-
     // An adapter never creates a Race. Unresolvable rosters quarantine instead.
-    const resolve = async (raceKey: string) => {
-      const m = raceKey.match(/^disd-trustee-(\d+)$/);
-      if (!m) return null;
-      const race = await prisma.race.findFirst({
-        where: {
-          election: { slug: o.election },
-          office: { title: { contains: "Trustee" }, district: { name: `District ${m[1]}` } },
-        },
-      });
-      return race?.id ?? null;
-    };
+    let rosters;
+    let resolve: (raceKey: string) => Promise<string | null>;
+
+    if (o.adapter === "dallas-isd") {
+      rosters = (await fetchIsdRoster(o.date, new Date())).rosters;
+      resolve = async (raceKey: string) => {
+        const m = raceKey.match(/^disd-trustee-(\d+)$/);
+        if (!m) return null;
+        const race = await prisma.race.findFirst({
+          where: {
+            election: { slug: o.election },
+            office: { title: { contains: "Trustee" }, district: { name: `District ${m[1]}` } },
+          },
+        });
+        return race?.id ?? null;
+      };
+    } else if (o.adapter === "dallas-city-secretary") {
+      const year = Number(String(o.date).slice(0, 4));
+      const run = await fetchCouncilRoster(year, new Date());
+      rosters = run.rosters;
+      console.log(`basis: ${run.basis} (${run.sourceUrl})`);
+      // Filed-vs-certified differences are printed, never merged into the roster.
+      for (const r of run.reconciliation) {
+        const notes = [
+          r.filedOnly.length ? `filed but not on ballot: ${r.filedOnly.join(", ")}` : "",
+          r.certifiedOnly.length ? `on ballot but never filed: ${r.certifiedOnly.join(", ")}` : "",
+          ...r.probableRespellings.map((x) => `possible respelling: ${x.filed} / ${x.certified}`),
+          r.placeholders ? `${r.placeholders} unnamed ballot line(s)` : "",
+        ].filter(Boolean);
+        if (notes.length) console.log(`  Place ${r.place}: ${notes.join("; ")}`);
+      }
+      resolve = async (raceKey: string) => {
+        const { raceId, reason } = await resolveCouncilSeat(o.election, raceKey);
+        if (!raceId) console.log(`  ! ${raceKey}: ${reason}`);
+        return raceId;
+      };
+    } else {
+      throw new Error(`unknown adapter ${o.adapter}`);
+    }
 
     const out = await persistRun(
       { adapter: o.adapter, electionSlug: o.election, dryRun: !!o.dryRun },
-      run.rosters,
+      rosters,
       resolve,
     );
     for (const r of out.races) {
