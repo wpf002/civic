@@ -5,9 +5,18 @@ import { novemberCalendar, mayCalendar, iso, deadlinesNeedingReview } from "./ad
 import { resolveDistricts } from "./adapters/districts.js";
 import { fetchIsdRoster } from "./adapters/dallas-isd.js";
 import { fetchCouncilRoster } from "./adapters/dallas-city-secretary.js";
-import { fetchFederalRosters } from "./adapters/fec.js";
+import { fetchFederalRosters, formatFecName } from "./adapters/fec.js";
+import {
+  fetchCongressMemberSite,
+  fetchCongressMembers,
+  fetchFecSites,
+  fetchOpenStatesPeople,
+  preferSite,
+  siteFromOpenStatesLinks,
+  type CandidateSite,
+} from "./adapters/candidate-sites.js";
 import { resolveCouncilSeat, resolveFederalSeat } from "./seats.js";
-import { diffRoster } from "./roster.js";
+import { diffRoster, nameKey } from "./roster.js";
 
 const program = new Command("civic-ingest");
 
@@ -139,6 +148,99 @@ program
       if (r.removed.length) console.log(`  - ${r.removed.join(", ")}`);
       for (const reason of r.reasons) console.log(`  ! ${reason}`);
     }
+    await prisma.$disconnect();
+  });
+
+program
+  .command("sites")
+  .description("Find campaign websites for candidates, from FEC Form 1, OpenStates and Congress.gov.")
+  .requiredOption("--election <slug>")
+  .option("--state <xx>", "two-letter state", "TX")
+  .option("--cycle <yyyy>", "FEC election year", (v) => Number(v), 2026)
+  .option("--congress <n>", "Congress number for the official-site lookup", (v) => Number(v), 119)
+  .option("--dry-run")
+  .action(async (o) => {
+    const found = new Map<string, CandidateSite>();
+
+    // 1. FEC Form 1. The campaign told the government its own address, which is the
+    //    most direct assertion available and covers about half of filers.
+    const cands = await fetchFederalRosters(o.state, o.cycle, new Date());
+    const fecIds = cands.rosters.flatMap((r) =>
+      r.entries.map((e) => (e.sourceUrl ?? "").match(/candidate\/([A-Z0-9]+)\//)?.[1]).filter(Boolean),
+    ) as string[];
+    const { sites: byFecId, failed: fecFailed } = await fetchFecSites(fecIds);
+    const nameByFecId = new Map<string, string>();
+    for (const r of cands.rosters) {
+      for (const e of r.entries) {
+        const id = (e.sourceUrl ?? "").match(/candidate\/([A-Z0-9]+)\//)?.[1];
+        if (id) nameByFecId.set(id, e.name);
+      }
+    }
+    for (const [id, site] of byFecId) {
+      const name = nameByFecId.get(id);
+      if (name) found.set(nameKey(name), site);
+    }
+    console.log(
+      `FEC Form 1:    ${byFecId.size} of ${fecIds.length} federal candidates` +
+        (fecFailed.length ? `  (${fecFailed.length} lookups FAILED — not the same as no website)` : ""),
+    );
+
+    // 2. Congress.gov, for sitting members. An official .gov site, tiered lower.
+    let congressHits = 0;
+    for (const m of await fetchCongressMembers(o.state, o.congress)) {
+      const site = await fetchCongressMemberSite(m.bioguideId);
+      if (!site) continue;
+      congressHits++;
+      const key = nameKey(formatFecName(m.name));
+      found.set(key, preferSite(found.get(key) ?? null, site)!);
+    }
+    console.log(`Congress.gov:  ${congressHits} sitting members`);
+
+    // 3. OpenStates, for sitting state legislators. Officeholders, never candidates —
+    //    there is no candidate endpoint, so this adds no state roster.
+    let osHits = 0;
+    const people = await fetchOpenStatesPeople("Texas");
+    for (const p of people) {
+      const site = siteFromOpenStatesLinks(p.links ?? [], p.openstates_url);
+      if (!site) continue;
+      osHits++;
+      const key = nameKey(p.name);
+      found.set(key, preferSite(found.get(key) ?? null, site)!);
+    }
+    console.log(`OpenStates:    ${osHits} of ${people.length} sitting state legislators`);
+
+    // Persist only against candidates this election actually has.
+    const candidates = await prisma.candidate.findMany({
+      where: { candidacies: { some: { race: { election: { slug: o.election } } } } },
+      select: { id: true, slug: true, fullName: true, websiteUrl: true },
+    });
+
+    let wrote = 0;
+    let already = 0;
+    for (const c of candidates) {
+      const site = found.get(nameKey(c.fullName));
+      if (!site) continue;
+      if (c.websiteUrl === site.url) {
+        already++;
+        continue;
+      }
+      if (!o.dryRun) {
+        await prisma.candidate.update({ where: { id: c.id }, data: { websiteUrl: site.url } });
+      }
+      wrote++;
+    }
+
+    const covered = candidates.filter((c) => found.has(nameKey(c.fullName))).length;
+    console.log(
+      `\n${o.election}: ${covered} of ${candidates.length} candidates have a website ` +
+        `(${Math.round((100 * covered) / Math.max(candidates.length, 1))}%)` +
+        `\n${wrote} written, ${already} already current` +
+        (o.dryRun ? "  (dry run, nothing written)" : ""),
+    );
+    console.log(
+      `${candidates.length - covered} have none. That is recorded as none, not guessed at — ` +
+        `a wrong website attributes one candidate's words to another.`,
+    );
     await prisma.$disconnect();
   });
 
