@@ -37,6 +37,14 @@ export interface RosterEntry {
   isWriteIn?: boolean;
   isPlaceholder?: boolean;
   sourceUrl?: string;
+  /**
+   * Stable ids from the source system, e.g. { fec: "H6TX05189" }.
+   *
+   * Persisted onto Candidate.externalIds so a later step never has to re-derive
+   * them by refetching an entire roster — which is how one run burned an hourly
+   * API quota rediscovering ids it already had.
+   */
+  externalIds?: Record<string, string>;
 }
 
 export interface Roster {

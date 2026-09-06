@@ -45,6 +45,7 @@ function toPayload(r: Roster): Prisma.InputJsonValue {
       isWriteIn: !!e.isWriteIn,
       isPlaceholder: !!e.isPlaceholder,
       sourceUrl: e.sourceUrl ?? null,
+      externalIds: e.externalIds ?? null,
     })),
   };
 }
@@ -207,10 +208,16 @@ async function applyAdditive(raceId: string, roster: Roster, adapter: string): P
     if (entry.isPlaceholder) continue; // an unnamed line is never a Candidate row
 
     const slug = entry.key.replace(/\s+/g, "-");
+    const existingCandidate = await prisma.candidate.findUnique({ where: { slug } });
+    // Merge external ids rather than replacing them: a candidate can be known to the
+    // FEC and to OpenStates, and the second adapter to run must not erase the first.
+    const externalIds = entry.externalIds
+      ? { ...((existingCandidate?.externalIds as Record<string, string> | null) ?? {}), ...entry.externalIds }
+      : undefined;
     const candidate = await prisma.candidate.upsert({
       where: { slug },
-      update: { fullName: entry.name },
-      create: { slug, fullName: entry.name },
+      update: { fullName: entry.name, ...(externalIds ? { externalIds } : {}) },
+      create: { slug, fullName: entry.name, ...(externalIds ? { externalIds } : {}) },
     });
 
     const existing = await prisma.candidacy.findUnique({

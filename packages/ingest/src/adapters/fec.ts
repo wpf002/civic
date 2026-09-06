@@ -154,6 +154,7 @@ export function toRosters(
         // thing it was derived from should survive next to it.
         sourceName: c.name,
         sourceUrl: `https://www.fec.gov/data/candidate/${c.candidate_id}/`,
+        externalIds: { fec: c.candidate_id },
         fecIds: [c.candidate_id],
         filed: c.first_file_date ?? "9999",
       });
@@ -198,6 +199,26 @@ export interface FederalRosterRun {
   merged: MergedFiling[];
 }
 
+/** Retry the rate limiter and transient server errors; pass everything else through. */
+export async function withRetry(
+  call: () => Promise<Response>,
+  sleep: (ms: number) => Promise<void>,
+  retries = 5,
+): Promise<Response> {
+  let last: Response | undefined;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      last = await call();
+    } catch {
+      await sleep(500 * 2 ** attempt);
+      continue;
+    }
+    if (last.status !== 429 && last.status < 500) return last;
+    await sleep(1000 * 2 ** attempt);
+  }
+  return last ?? new Response(null, { status: 599 });
+}
+
 /** Fetch every page for one office. Throws rather than returning a short list. */
 async function fetchOffice(
   state: string,
@@ -205,6 +226,7 @@ async function fetchOffice(
   office: "H" | "S",
   apiKey: string,
   fetchImpl: typeof fetch,
+  sleep: (ms: number) => Promise<void>,
 ): Promise<FecCandidate[]> {
   const out: FecCandidate[] = [];
   let page = 1;
@@ -214,7 +236,10 @@ async function fetchOffice(
     const url =
       `${API}/candidates/?api_key=${encodeURIComponent(apiKey)}&state=${state}` +
       `&election_year=${cycle}&office=${office}&candidate_status=C&per_page=100&page=${page}&sort=name`;
-    const res = await fetchImpl(url);
+    // A 429 is the rate limiter, not an answer about this state. Without a backoff a
+    // throttled run throws mid-roster, which is indistinguishable from a state with
+    // fewer candidates than it has.
+    const res = await withRetry(() => fetchImpl(url), sleep);
     if (!res.ok) throw new Error(`FEC returned ${res.status} for ${office} page ${page}`);
     const body = (await res.json()) as FecPage & { error?: unknown };
     if (body.error) throw new Error(`FEC error: ${JSON.stringify(body.error)}`);
@@ -239,7 +264,7 @@ export async function fetchFederalRosters(
   state: string,
   cycle: number,
   observedAt: Date,
-  opts: { apiKey?: string; fetchImpl?: typeof fetch } = {},
+  opts: { apiKey?: string; fetchImpl?: typeof fetch; sleep?: (ms: number) => Promise<void> } = {},
 ): Promise<FederalRosterRun> {
   const apiKey = opts.apiKey ?? process.env.FEC_API_KEY;
   if (!apiKey) {
@@ -249,10 +274,11 @@ export async function fetchFederalRosters(
     );
   }
   const fetchImpl = opts.fetchImpl ?? fetch;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
 
   const [house, senate] = await Promise.all([
-    fetchOffice(state, cycle, "H", apiKey, fetchImpl),
-    fetchOffice(state, cycle, "S", apiKey, fetchImpl),
+    fetchOffice(state, cycle, "H", apiKey, fetchImpl, sleep),
+    fetchOffice(state, cycle, "S", apiKey, fetchImpl, sleep),
   ]);
   const all = [...house, ...senate];
 

@@ -162,20 +162,24 @@ program
   .action(async (o) => {
     const found = new Map<string, CandidateSite>();
 
+    // Candidates already in this election, with whatever ids the ingest recorded.
+    // Deliberately NOT refetching the roster to recover FEC ids: the first version of
+    // this command did that and spent an entire hourly quota rediscovering ids that
+    // were already stored.
+    const candidates = await prisma.candidate.findMany({
+      where: { candidacies: { some: { race: { election: { slug: o.election } } } } },
+      select: { id: true, slug: true, fullName: true, websiteUrl: true, externalIds: true },
+    });
+
     // 1. FEC Form 1. The campaign told the government its own address, which is the
     //    most direct assertion available and covers about half of filers.
-    const cands = await fetchFederalRosters(o.state, o.cycle, new Date());
-    const fecIds = cands.rosters.flatMap((r) =>
-      r.entries.map((e) => (e.sourceUrl ?? "").match(/candidate\/([A-Z0-9]+)\//)?.[1]).filter(Boolean),
-    ) as string[];
-    const { sites: byFecId, failed: fecFailed } = await fetchFecSites(fecIds);
     const nameByFecId = new Map<string, string>();
-    for (const r of cands.rosters) {
-      for (const e of r.entries) {
-        const id = (e.sourceUrl ?? "").match(/candidate\/([A-Z0-9]+)\//)?.[1];
-        if (id) nameByFecId.set(id, e.name);
-      }
+    for (const c of candidates) {
+      const fec = (c.externalIds as { fec?: string } | null)?.fec;
+      if (fec) nameByFecId.set(fec, c.fullName);
     }
+    const fecIds = [...nameByFecId.keys()];
+    const { sites: byFecId, failed: fecFailed } = await fetchFecSites(fecIds);
     for (const [id, site] of byFecId) {
       const name = nameByFecId.get(id);
       if (name) found.set(nameKey(name), site);
@@ -208,12 +212,6 @@ program
       found.set(key, preferSite(found.get(key) ?? null, site)!);
     }
     console.log(`OpenStates:    ${osHits} of ${people.length} sitting state legislators`);
-
-    // Persist only against candidates this election actually has.
-    const candidates = await prisma.candidate.findMany({
-      where: { candidacies: { some: { race: { election: { slug: o.election } } } } },
-      select: { id: true, slug: true, fullName: true, websiteUrl: true },
-    });
 
     let wrote = 0;
     let already = 0;
