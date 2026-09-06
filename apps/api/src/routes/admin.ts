@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { prisma } from "@civic/db";
+import { prisma, type Prisma } from "@civic/db";
 
 /**
  * Review console backend.
@@ -322,6 +322,126 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       await tx.position.update({ where: { id: old.id }, data: { status: "SUPERSEDED" } });
       return next;
     });
+  });
+
+  /**
+   * Merge two candidate records that are the same person.
+   *
+   * Different authorities spell people differently — the FEC says "Sylvia R Garcia"
+   * and the certified ballot says "Sylvia Garcia" — so one person ends up holding two
+   * rows, and the row carrying their website is often not the row on the ballot.
+   *
+   * This is a removal: one record stops existing. So it is a reviewed action with a
+   * named reviewer, it refuses to act across different races, and it moves every
+   * reference before deleting anything. The absorbed id is written into the surviving
+   * record's externalIds so the merge stays traceable afterwards.
+   */
+  app.post("/candidates/merge", async (req, reply) => {
+    const body = z
+      .object({
+        /** The record to keep. Should be the one on the certified ballot. */
+        keepId: z.string(),
+        /** The record to absorb. */
+        mergeId: z.string(),
+        note: z.string().max(500).optional(),
+      })
+      .parse(req.body);
+    const who = reviewer(req);
+    if (!who) return reply.code(400).send({ error: "x-reviewer header is required" });
+    if (body.keepId === body.mergeId) {
+      return reply.code(400).send({ error: "keepId and mergeId are the same record" });
+    }
+
+    const [keep, merge] = await Promise.all([
+      prisma.candidate.findUnique({ where: { id: body.keepId }, include: { candidacies: true } }),
+      prisma.candidate.findUnique({ where: { id: body.mergeId }, include: { candidacies: true } }),
+    ]);
+    if (!keep || !merge) return reply.code(404).send({ error: "not found" });
+
+    // Both records must be in the same race. Same-race is the entire basis on which
+    // two similar names were proposed as one person; without it this is just a guess
+    // that two people in Texas share a name.
+    const keepRaces = new Set(keep.candidacies.map((c) => c.raceId));
+    const shared = merge.candidacies.filter((c) => keepRaces.has(c.raceId));
+    if (shared.length === 0) {
+      return reply.code(422).send({
+        error: "these records share no race",
+        why:
+          "Two similar names are only proposed as one person because they appear in the " +
+          "same contest. Merging across races would be merging on a name alone.",
+      });
+    }
+
+    const merged = await prisma.$transaction(async (tx) => {
+      // Everything the absorbed record owns moves first. Nothing is deleted until the
+      // row has no references left.
+      await tx.position.updateMany({ where: { candidateId: merge.id }, data: { candidateId: keep.id } });
+      await tx.source.updateMany({ where: { candidateId: merge.id }, data: { candidateId: keep.id } });
+      await tx.incumbency.updateMany({ where: { candidateId: merge.id }, data: { candidateId: keep.id } });
+      await tx.voteRecord.updateMany({ where: { candidateId: merge.id }, data: { candidateId: keep.id } });
+
+      let movedCandidacies = 0;
+      for (const c of merge.candidacies) {
+        const existing = keep.candidacies.find((k) => k.raceId === c.raceId);
+        if (!existing) {
+          await tx.candidacy.update({ where: { id: c.id }, data: { candidateId: keep.id } });
+          movedCandidacies++;
+          continue;
+        }
+        // Both records are in this race. Keep the surviving candidacy but take
+        // anything the absorbed one knew and the survivor did not — certification
+        // especially, since that is what decides whether the name is on a ballot.
+        await tx.candidacy.update({
+          where: { id: existing.id },
+          data: {
+            isCertified: existing.isCertified || c.isCertified,
+            isIncumbent: existing.isIncumbent || c.isIncumbent,
+            isWriteIn: existing.isWriteIn || c.isWriteIn,
+            ...(existing.ballotOrder == null && c.ballotOrder != null ? { ballotOrder: c.ballotOrder } : {}),
+            ...(existing.certifiedAt == null && c.certifiedAt ? { certifiedAt: c.certifiedAt } : {}),
+            ...(existing.filedAt == null && c.filedAt ? { filedAt: c.filedAt } : {}),
+            ...(existing.status === "DECLARED" && c.status !== "DECLARED" ? { status: c.status } : {}),
+          },
+        });
+        await tx.candidacy.delete({ where: { id: c.id } });
+      }
+
+      const keepIds = (keep.externalIds as Record<string, Prisma.InputJsonValue> | null) ?? {};
+      const mergeIds = (merge.externalIds as Record<string, Prisma.InputJsonValue> | null) ?? {};
+      const priorMerges = Array.isArray(keepIds.mergedFrom) ? (keepIds.mergedFrom as Prisma.InputJsonValue[]) : [];
+      const updated = await tx.candidate.update({
+        where: { id: keep.id },
+        data: {
+          // The absorbed record's ids are the point of the merge: that is where the
+          // FEC id, and usually the website, lives.
+          externalIds: {
+            ...mergeIds,
+            ...keepIds,
+            mergedFrom: [
+              ...priorMerges,
+              { id: merge.id, fullName: merge.fullName, by: who, at: new Date().toISOString() },
+            ],
+          },
+          ...(keep.websiteUrl ? {} : merge.websiteUrl ? { websiteUrl: merge.websiteUrl } : {}),
+          ...(keep.photoUrl ? {} : merge.photoUrl ? { photoUrl: merge.photoUrl } : {}),
+          ...(keep.bio ? {} : merge.bio ? { bio: merge.bio } : {}),
+        },
+      });
+
+      await tx.candidate.delete({ where: { id: merge.id } });
+
+      await tx.reviewTask.updateMany({
+        where: { kind: "CANDIDATE_PROFILE", targetId: { in: [keep.id, merge.id] }, resolvedAt: null },
+        data: {
+          resolvedAt: new Date(),
+          resolution: `Merged "${merge.fullName}" into "${keep.fullName}" by ${who}${body.note ? ` — ${body.note}` : ""}`,
+        },
+      });
+
+      return { candidate: updated, movedCandidacies };
+    });
+
+    return { ok: true, keptId: keep.id, absorbed: merge.fullName, ...merged };
   });
 
   app.get("/runs", async () =>

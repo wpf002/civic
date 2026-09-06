@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import { prisma } from "@civic/db";
 import { adminRoutes } from "./admin.js";
@@ -229,5 +229,110 @@ describe("positions", () => {
     });
     expect(r.statusCode).toBe(200);
     await prisma.position.delete({ where: { id: p.id } });
+  });
+});
+
+describe("merging two records that are the same person", () => {
+  const P = "zz-merge-test-";
+
+  async function makePair(sameRace: boolean) {
+    const race = await prisma.race.findFirstOrThrow({
+      where: { election: { slug: "2026-11-tx" } },
+    });
+    const other = await prisma.race.findFirstOrThrow({
+      where: { election: { slug: "2026-11-tx" }, NOT: { id: race.id } },
+    });
+    const keep = await prisma.candidate.create({
+      data: { slug: `${P}keep`, fullName: "ZZ Sylvia Garcia", externalIds: { txsos: "1" } },
+    });
+    const merge = await prisma.candidate.create({
+      data: {
+        slug: `${P}merge`,
+        fullName: "ZZ Sylvia R Garcia",
+        websiteUrl: "https://example.org/sylvia",
+        externalIds: { fec: "H8TX29999" },
+      },
+    });
+    await prisma.candidacy.create({
+      data: { raceId: race.id, candidateId: keep.id, isCertified: true, firstObservedAt: new Date() },
+    });
+    await prisma.candidacy.create({
+      data: {
+        raceId: sameRace ? race.id : other.id,
+        candidateId: merge.id,
+        isIncumbent: true,
+        firstObservedAt: new Date(),
+      },
+    });
+    return { keep, merge, raceId: race.id };
+  }
+
+  async function purge() {
+    const mine = await prisma.candidate.findMany({ where: { slug: { startsWith: P } }, select: { id: true } });
+    const ids = mine.map((m) => m.id);
+    if (ids.length) await prisma.candidacy.deleteMany({ where: { candidateId: { in: ids } } });
+    await prisma.candidate.deleteMany({ where: { slug: { startsWith: P } } });
+  }
+
+  afterEach(purge);
+
+  it("keeps the ballot record, absorbs the other's ids and website, and deletes it", async () => {
+    const { keep, merge } = await makePair(true);
+    const res = await app.inject({
+      method: "POST",
+      url: "/admin/candidates/merge",
+      headers: { authorization: `Bearer ${TOKEN}`, "x-reviewer": "Reviewer" },
+      payload: { keepId: keep.id, mergeId: merge.id },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const after = await prisma.candidate.findUniqueOrThrow({ where: { id: keep.id } });
+    // The whole point: the FEC id and the website live on the absorbed record.
+    expect((after.externalIds as Record<string, unknown>).fec).toBe("H8TX29999");
+    expect((after.externalIds as Record<string, unknown>).txsos).toBe("1");
+    expect(after.websiteUrl).toBe("https://example.org/sylvia");
+    // And the merge stays traceable rather than vanishing.
+    expect((after.externalIds as { mergedFrom: Array<{ fullName: string }> }).mergedFrom[0]!.fullName).toBe(
+      "ZZ Sylvia R Garcia",
+    );
+    expect(await prisma.candidate.findUnique({ where: { id: merge.id } })).toBeNull();
+  });
+
+  it("carries certification and incumbency across into the surviving candidacy", async () => {
+    const { keep, merge, raceId } = await makePair(true);
+    await app.inject({
+      method: "POST",
+      url: "/admin/candidates/merge",
+      headers: { authorization: `Bearer ${TOKEN}`, "x-reviewer": "Reviewer" },
+      payload: { keepId: keep.id, mergeId: merge.id },
+    });
+    const c = await prisma.candidacy.findFirstOrThrow({ where: { raceId, candidateId: keep.id } });
+    expect(c.isCertified).toBe(true);
+    expect(c.isIncumbent).toBe(true);
+    expect(await prisma.candidacy.count({ where: { candidateId: merge.id } })).toBe(0);
+  });
+
+  it("refuses to merge records that share no race", async () => {
+    const { keep, merge } = await makePair(false);
+    const res = await app.inject({
+      method: "POST",
+      url: "/admin/candidates/merge",
+      headers: { authorization: `Bearer ${TOKEN}`, "x-reviewer": "Reviewer" },
+      payload: { keepId: keep.id, mergeId: merge.id },
+    });
+    // Same-race is the entire basis for proposing two names as one person.
+    expect(res.statusCode).toBe(422);
+    expect(await prisma.candidate.findUnique({ where: { id: merge.id } })).not.toBeNull();
+  });
+
+  it("requires a named reviewer", async () => {
+    const { keep, merge } = await makePair(true);
+    const res = await app.inject({
+      method: "POST",
+      url: "/admin/candidates/merge",
+      headers: { authorization: `Bearer ${TOKEN}` },
+      payload: { keepId: keep.id, mergeId: merge.id },
+    });
+    expect(res.statusCode).toBe(400);
   });
 });

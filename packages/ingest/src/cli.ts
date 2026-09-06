@@ -17,6 +17,7 @@ import {
 } from "./adapters/candidate-sites.js";
 import { NOVEMBER_2026, fetchCertifiedRoster } from "./adapters/tx-sos.js";
 import { resolveCouncilSeat, resolveFederalSeat } from "./seats.js";
+import { proposePairsInRace } from "@civic/core";
 import { diffRoster, nameKey } from "./roster.js";
 
 const program = new Command("civic-ingest");
@@ -293,6 +294,113 @@ program
           `re-run with --only-missing to retry just them.`,
       );
     }
+    await prisma.$disconnect();
+  });
+
+program
+  .command("identities")
+  .description("Propose candidate records that may be the same person. Never merges; opens review tasks.")
+  .requiredOption("--election <slug>")
+  .option("--apply", "write ReviewTasks (default is to print only)")
+  .option("--merge-strong", "merge the strong proposals via the admin API")
+  .option("--api <url>", "admin API base", process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000")
+  .option("--reviewer <name>", "who is accountable for the merges")
+  .action(async (o) => {
+    const races = await prisma.race.findMany({
+      where: { election: { slug: o.election } },
+      include: {
+        office: { include: { district: true } },
+        candidacies: { include: { candidate: { select: { id: true, fullName: true, websiteUrl: true, externalIds: true } } } },
+      },
+    });
+
+    let proposed = 0;
+    let written = 0;
+    const strongPairs: Array<{
+      keepId: string; keepName: string; mergeId: string; mergeName: string; reason: string;
+    }> = [];
+
+    for (const race of races) {
+      // Same-race is what makes this safe enough to propose at all: two Sylvia
+      // Garcias on one ballot is vanishingly unlikely, two in Texas is certain.
+      const people = race.candidacies.map((c) => c.candidate);
+      for (const pair of proposePairsInRace(people)) {
+        proposed++;
+        const label = `${race.office.title} ${race.office.district?.name ?? race.office.seatLabel ?? ""}`.trim();
+        const detail =
+          `Possible duplicate in ${label}: "${pair.a.fullName}" and "${pair.b.fullName}" ` +
+          `(${pair.confidence} — ${pair.reason}). ` +
+          `Sources spell people differently; the record carrying the website is often not ` +
+          `the record on the ballot. Merging is a removal, so confirm before applying.`;
+        console.log(`${pair.confidence.padEnd(8)} ${label}: ${pair.a.fullName}  ||  ${pair.b.fullName}`);
+
+        if (pair.confidence === "strong") {
+          // Keep the record that is on the certified ballot: that is the name a voter
+          // will see. The other record is usually the FEC filing, and it is the one
+          // carrying the website worth absorbing.
+          const aCert = race.candidacies.find((c) => c.candidateId === pair.a.id)?.isCertified ?? false;
+          const bCert = race.candidacies.find((c) => c.candidateId === pair.b.id)?.isCertified ?? false;
+          const [keepC, mergeC] = aCert && !bCert ? [pair.a, pair.b] : [pair.b, pair.a];
+          strongPairs.push({
+            keepId: keepC.id, keepName: keepC.fullName,
+            mergeId: mergeC.id, mergeName: mergeC.fullName,
+            reason: pair.reason,
+          });
+        }
+
+        if (o.apply) {
+          const existing = await prisma.reviewTask.findFirst({
+            where: { kind: "CANDIDATE_PROFILE", targetId: pair.a.id, reason: { contains: pair.b.fullName }, resolvedAt: null },
+          });
+          if (!existing) {
+            await prisma.reviewTask.create({
+              data: { kind: "CANDIDATE_PROFILE", targetId: pair.a.id, reason: detail },
+            });
+            written++;
+          }
+        }
+      }
+    }
+
+    console.log(
+      `\n${proposed} proposed across ${races.length} races` +
+        (o.apply ? `, ${written} new review tasks` : "  (no review tasks written; pass --apply)"),
+    );
+
+    if (!o.mergeStrong) {
+      console.log("Nothing was merged. Merging two records deletes one, and that needs a person.");
+      await prisma.$disconnect();
+      return;
+    }
+
+    // Merging goes through the admin API rather than straight to the database, so it
+    // takes the same path, the same checks and the same audit trail as a merge done
+    // by hand in the review console. A second implementation would drift from it.
+    if (!o.reviewer) throw new Error("--merge-strong requires --reviewer: someone is accountable for a removal");
+    const token = process.env.ADMIN_TOKEN;
+    if (!token || token === "change-me") throw new Error("ADMIN_TOKEN is not configured");
+
+    let mergedOk = 0;
+    const failures: string[] = [];
+    for (const m of strongPairs) {
+      const res = await fetch(`${o.api}/admin/candidates/merge`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: `Bearer ${token}`,
+          "x-reviewer": o.reviewer,
+        },
+        body: JSON.stringify({ keepId: m.keepId, mergeId: m.mergeId, note: m.reason }),
+      });
+      if (res.ok) {
+        mergedOk++;
+        console.log(`  merged "${m.mergeName}" into "${m.keepName}"`);
+      } else {
+        failures.push(`${m.keepName} / ${m.mergeName}: ${res.status} ${await res.text()}`);
+      }
+    }
+    console.log(`\n${mergedOk} merged, ${failures.length} failed`);
+    for (const f of failures) console.log(`  ! ${f}`);
     await prisma.$disconnect();
   });
 
