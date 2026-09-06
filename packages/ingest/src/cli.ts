@@ -158,6 +158,7 @@ program
   .option("--state <xx>", "two-letter state", "TX")
   .option("--cycle <yyyy>", "FEC election year", (v) => Number(v), 2026)
   .option("--congress <n>", "Congress number for the official-site lookup", (v) => Number(v), 119)
+  .option("--only-missing", "look up only candidates that have no website yet")
   .option("--dry-run")
   .action(async (o) => {
     const found = new Map<string, CandidateSite>();
@@ -178,7 +179,18 @@ program
       const fec = (c.externalIds as { fec?: string } | null)?.fec;
       if (fec) nameByFecId.set(fec, c.fullName);
     }
-    const fecIds = [...nameByFecId.keys()];
+    // A partial run leaves failed lookups behind. Re-running the whole state to
+    // recover them costs another full quota, so --only-missing narrows to candidates
+    // that still have no website. Failures and genuine absences are indistinguishable
+    // from here, which is fine: looking again at both is exactly what is wanted.
+    const needed = o.onlyMissing ? candidates.filter((c) => !c.websiteUrl) : candidates;
+    const neededFec = new Set(
+      needed.map((c) => (c.externalIds as { fec?: string } | null)?.fec).filter(Boolean) as string[],
+    );
+    const fecIds = [...nameByFecId.keys()].filter((id) => neededFec.has(id));
+    if (o.onlyMissing) {
+      console.log(`only-missing: ${needed.length} of ${candidates.length} candidates still have no website`);
+    }
     const { sites: byFecId, failed: fecFailed } = await fetchFecSites(fecIds);
     for (const [id, site] of byFecId) {
       const name = nameByFecId.get(id);
@@ -228,17 +240,38 @@ program
       wrote++;
     }
 
-    const covered = candidates.filter((c) => found.has(nameKey(c.fullName))).length;
+    // Report the state of the database, not the contents of this run's lookup map.
+    // With --only-missing the map covers a narrowed set, and computing coverage from
+    // it printed "27 of 241 (11%)" for a database that was 67% covered. A number whose
+    // meaning changes with the flags is worse than no number.
+    const total = await prisma.candidate.count({
+      where: { candidacies: { some: { race: { election: { slug: o.election } } } } },
+    });
+    const withSite = await prisma.candidate.count({
+      where: {
+        candidacies: { some: { race: { election: { slug: o.election } } } },
+        NOT: { websiteUrl: null },
+      },
+    });
+
     console.log(
-      `\n${o.election}: ${covered} of ${candidates.length} candidates have a website ` +
-        `(${Math.round((100 * covered) / Math.max(candidates.length, 1))}%)` +
-        `\n${wrote} written, ${already} already current` +
+      `\nthis run: ${wrote} written, ${already} already current` +
         (o.dryRun ? "  (dry run, nothing written)" : ""),
     );
     console.log(
-      `${candidates.length - covered} have none. That is recorded as none, not guessed at — ` +
+      `${o.election}: ${withSite} of ${total} candidates have a website ` +
+        `(${Math.round((100 * withSite) / Math.max(total, 1))}%)`,
+    );
+    console.log(
+      `${total - withSite} have none recorded. That is recorded as none, not guessed at — ` +
         `a wrong website attributes one candidate's words to another.`,
     );
+    if (fecFailed.length) {
+      console.log(
+        `${fecFailed.length} FEC lookups did not complete. Those are not absences; ` +
+          `re-run with --only-missing to retry just them.`,
+      );
+    }
     await prisma.$disconnect();
   });
 
