@@ -18,6 +18,8 @@ import {
 import { NOVEMBER_2026, fetchCertifiedRoster } from "./adapters/tx-sos.js";
 import { resolveCouncilSeat, resolveFederalSeat } from "./seats.js";
 import { proposePairsInRace } from "@civic/core";
+import { createHash } from "node:crypto";
+import { htmlToText } from "./html-text.js";
 import { diffRoster, nameKey } from "./roster.js";
 
 const program = new Command("civic-ingest");
@@ -294,6 +296,67 @@ program
           `re-run with --only-missing to retry just them.`,
       );
     }
+    await prisma.$disconnect();
+  });
+
+program
+  .command("archive")
+  .description("Fetch each candidate's website and store it as a Source the extractor can quote.")
+  .requiredOption("--election <slug>")
+  .option("--certified-only", "only candidates on the certified ballot")
+  .option("--concurrency <n>", "parallel fetches", (v) => Number(v), 6)
+  .action(async (o) => {
+    const candidates = await prisma.candidate.findMany({
+      where: {
+        candidacies: { some: { race: { election: { slug: o.election } }, ...(o.certifiedOnly ? { isCertified: true } : {}) } },
+        NOT: { websiteUrl: null },
+      },
+      select: { id: true, fullName: true, websiteUrl: true },
+    });
+    console.log(`${candidates.length} candidates with a website`);
+
+    let stored = 0, unchanged = 0, tooThin = 0;
+    const failed: string[] = [];
+    const queue = [...candidates];
+
+    const worker = async () => {
+      for (;;) {
+        const c = queue.shift();
+        if (!c) return;
+        try {
+          const res = await fetch(c.websiteUrl!, { redirect: "follow", headers: { "user-agent": "civic-ingest/0.1 (voter guide; contact via repo)" } });
+          if (!res.ok) { failed.push(`${c.fullName}: HTTP ${res.status}`); continue; }
+          const text = htmlToText(await res.text());
+          // A JS-only page archives as a nav bar. Reported, never quietly stored as a
+          // document the extractor will read as silence.
+          if (text.length < 400) { tooThin++; failed.push(`${c.fullName}: only ${text.length} chars of text (JS-rendered?)`); continue; }
+
+          const contentHash = createHash("sha256").update(text).digest("hex");
+          const existing = await prisma.source.findUnique({ where: { url_contentHash: { url: res.url, contentHash } } });
+          if (existing) { unchanged++; continue; }
+          await prisma.source.create({
+            data: {
+              kind: "CANDIDATE_WEBSITE",
+              tier: "CAMPAIGN_PLATFORM",
+              url: res.url,
+              title: `${c.fullName} — campaign website`,
+              capturedAt: new Date(),
+              contentHash,
+              text,
+              candidateId: c.id,
+            },
+          });
+          stored++;
+        } catch (err) {
+          failed.push(`${c.fullName}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(o.concurrency, queue.length) }, worker));
+
+    console.log(`\n${stored} archived, ${unchanged} unchanged, ${failed.length} failed (${tooThin} too thin to quote)`);
+    for (const f of failed.slice(0, 15)) console.log(`  ! ${f}`);
+    if (failed.length > 15) console.log(`  ... and ${failed.length - 15} more`);
     await prisma.$disconnect();
   });
 
