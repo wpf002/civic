@@ -5,6 +5,10 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // A dedicated shadow database, always. Prisma RESETS whatever it is given as the
+  // shadow — pointing it at DATABASE_URL once in this project dropped every row in
+  // development. Naming a separate database here makes that mistake unavailable.
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 // ------------------------------------------------------------------ geography
@@ -253,6 +257,11 @@ model WatchTarget {
 
 /// Written on every run, including unchanged ones. This is the only thing that
 /// makes a roster SHRINK detectable.
+enum RosterBasis {
+  FILED // someone filed to run. Not the ballot.
+  CERTIFIED // the authority says this is the ballot.
+}
+
 model RosterSnapshot {
   id             String       @id @default(cuid())
   raceId         String
@@ -260,6 +269,10 @@ model RosterSnapshot {
   ingestRunId    String?
   ingestRun      IngestRun?   @relation(fields: [ingestRunId], references: [id])
   adapter        String
+  // Which question this snapshot answers. Snapshots are only ever diffed against
+  // snapshots of the same basis: a certified ballot is smaller than the filing list
+  // by design, and comparing the two reads a primary election as a mass withdrawal.
+  basis          RosterBasis  @default(FILED)
   observedAt     DateTime     @default(now())
   candidateCount Int
   payload        Json // the parsed roster exactly as fetched
@@ -270,6 +283,7 @@ model RosterSnapshot {
   toDiffs        RosterDiff[] @relation("DiffTo")
 
   @@index([raceId, observedAt])
+  @@index([raceId, basis, observedAt])
 }
 
 enum DiffVerdict {

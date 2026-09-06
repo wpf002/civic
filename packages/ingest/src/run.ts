@@ -16,6 +16,16 @@ import { diffRoster, type Roster } from "./roster.js";
 export interface RunOptions {
   adapter: string;
   electionSlug: string;
+  /**
+   * Which question this run's rosters answer.
+   *
+   * Snapshots are only ever compared against snapshots of the same basis. A certified
+   * ballot is smaller than the filing list by design — TX-01 had four filers and two
+   * certified candidates — so diffing one against the other reads a primary election
+   * as a mass withdrawal and demands a withdrawal document for every losing candidate.
+   * That is the shrink guard firing on the wrong question, not a removal.
+   */
+  basis?: "FILED" | "CERTIFIED";
   /** Print what would happen and write nothing. */
   dryRun?: boolean;
 }
@@ -106,10 +116,13 @@ export async function persistRun(
 
     const race = await prisma.race.findUniqueOrThrow({ where: { id: raceId } });
 
-    // Compare against the last ACCEPTED snapshot, not merely the last one — otherwise
-    // a quarantined bad parse silently becomes the new baseline.
+    // Compare against the last ACCEPTED snapshot of the SAME basis. Accepted, because
+    // otherwise a quarantined bad parse silently becomes the new baseline; same basis,
+    // because filed and certified are different observations and comparing them is
+    // not a diff of anything.
+    const basis = opts.basis ?? "FILED";
     const prevRow = await prisma.rosterSnapshot.findFirst({
-      where: { raceId, accepted: true },
+      where: { raceId, accepted: true, basis },
       orderBy: { observedAt: "desc" },
     });
     const previous: Roster | null = prevRow
@@ -148,6 +161,7 @@ export async function persistRun(
         payload: toPayload(roster),
         sourceUrl: roster.sourceUrl,
         sourceHash: await sha256(JSON.stringify(toPayload(roster))),
+        basis,
         accepted: applied,
       },
     });
@@ -177,7 +191,7 @@ export async function persistRun(
     }
 
     changed += diff.added.length;
-    await applyAdditive(raceId, roster, opts.adapter);
+    await applyAdditive(raceId, roster, opts.adapter, basis);
   }
 
   if (run) {
@@ -202,7 +216,12 @@ export async function persistRun(
  * absence of delete code means the worst case is a stale row rather than a
  * disappeared candidate.
  */
-async function applyAdditive(raceId: string, roster: Roster, adapter: string): Promise<void> {
+async function applyAdditive(
+  raceId: string,
+  roster: Roster,
+  adapter: string,
+  basis: "FILED" | "CERTIFIED" = "FILED",
+): Promise<void> {
   const now = new Date();
   for (const entry of roster.entries) {
     if (entry.isPlaceholder) continue; // an unnamed line is never a Candidate row
@@ -224,12 +243,18 @@ async function applyAdditive(raceId: string, roster: Roster, adapter: string): P
       where: { raceId_candidateId: { raceId, candidateId: candidate.id } },
     });
 
+    // A certified roster is the authority saying this person is on the ballot. A filed
+    // one is not, and must never set the flag — that distinction is the difference
+    // between "these are your choices" being true and being false.
+    const certification = basis === "CERTIFIED" ? { isCertified: true, status: "QUALIFIED" as const, certifiedAt: now } : {};
+
     if (existing) {
       await prisma.candidacy.update({
         where: { id: existing.id },
         data: {
           lastObservedAt: now,
           observedSourceUrl: roster.sourceUrl,
+          ...certification,
           ...(entry.ballotOrder != null ? { ballotOrder: entry.ballotOrder } : {}),
         },
       });
@@ -245,6 +270,7 @@ async function applyAdditive(raceId: string, roster: Roster, adapter: string): P
         firstObservedAt: now,
         lastObservedAt: now,
         observedSourceUrl: roster.sourceUrl,
+        ...certification,
         ...(entry.ballotOrder != null ? { ballotOrder: entry.ballotOrder } : {}),
       },
     });
@@ -252,7 +278,10 @@ async function applyAdditive(raceId: string, roster: Roster, adapter: string): P
 
   await prisma.race.update({
     where: { id: raceId },
-    data: { rosterStatus: "FILING_OPEN", cancelledReason: null },
+    data: {
+      rosterStatus: basis === "CERTIFIED" ? "CERTIFIED" : "FILING_OPEN",
+      cancelledReason: null,
+    },
   });
   void adapter;
 }

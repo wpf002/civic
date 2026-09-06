@@ -15,6 +15,7 @@ import {
   siteFromOpenStatesLinks,
   type CandidateSite,
 } from "./adapters/candidate-sites.js";
+import { NOVEMBER_2026, fetchCertifiedRoster } from "./adapters/tx-sos.js";
 import { resolveCouncilSeat, resolveFederalSeat } from "./seats.js";
 import { diffRoster, nameKey } from "./roster.js";
 
@@ -74,13 +75,15 @@ program
 program
   .command("ingest")
   .description("Fetch a roster and PERSIST it: snapshot, diff, and apply if additive.")
-  .requiredOption("--adapter <name>", "dallas-isd | dallas-city-secretary | fec")
+  .requiredOption("--adapter <name>", "dallas-isd | dallas-city-secretary | fec | tx-sos")
+  .option("--sos-election <id>", "Texas SOS election id (default: 2026 November general)")
   .requiredOption("--election <slug>", "e.g. 2027-11-dallas")
   .requiredOption("--date <yyyy-mm-dd>", "the election date the source must match")
   .option("--dry-run")
   .action(async (o) => {
     // An adapter never creates a Race. Unresolvable rosters quarantine instead.
     let rosters;
+    let basis: "FILED" | "CERTIFIED" = "FILED";
     let resolve: (raceKey: string) => Promise<string | null>;
 
     if (o.adapter === "dallas-isd") {
@@ -133,12 +136,30 @@ program
         if (!raceId) console.log(`  ! ${raceKey}: ${reason}`);
         return raceId;
       };
+    } else if (o.adapter === "tx-sos") {
+      const run = await fetchCertifiedRoster(Number(o.sosElection ?? NOVEMBER_2026), new Date());
+      rosters = run.rosters;
+      basis = "CERTIFIED";
+      console.log(
+        `basis: ${run.basis} — ${run.candidateCount} candidates in ${run.rosters.length} modelled races. ` +
+          `This is the ballot, not the filers.`,
+      );
+      const unmappedTotal = run.unmapped.reduce((n, u) => n + u.count, 0);
+      console.log(
+        `  ${unmappedTotal} certified candidates are in ${run.unmapped.length} offices this product ` +
+          `does not model yet (top: ${run.unmapped.slice(0, 3).map((u) => `${u.officeName} x${u.count}`).join(", ")})`,
+      );
+      resolve = async (raceKey: string) => {
+        const { raceId, reason } = await resolveFederalSeat(o.election, raceKey);
+        if (!raceId) console.log(`  ! ${raceKey}: ${reason}`);
+        return raceId;
+      };
     } else {
       throw new Error(`unknown adapter ${o.adapter}`);
     }
 
     const out = await persistRun(
-      { adapter: o.adapter, electionSlug: o.election, dryRun: !!o.dryRun },
+      { adapter: o.adapter, electionSlug: o.election, basis, dryRun: !!o.dryRun },
       rosters,
       resolve,
     );
