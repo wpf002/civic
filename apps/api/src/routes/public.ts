@@ -77,7 +77,15 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     }),
   );
 
-  /** Elections that have something to show. An election with no published data does not render. */
+  /**
+   * Elections that have something to show.
+   *
+   * "Something" is a roster, not positions. An election with 39 real races and no
+   * research yet is a true statement about coverage, and the counts below say so
+   * exactly; hiding it would make the product look more complete than it is, which
+   * is the failure this whole codebase is arranged against. An election with no
+   * candidates either is still hidden — that is a seeded shell, not a finding.
+   */
   app.get("/elections", async () => {
     const elections = await prisma.election.findMany({ orderBy: { electionDate: "asc" } });
     const out = [];
@@ -97,7 +105,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
           },
         }),
       ]);
-      if (positions === 0) continue;
+      if (candidates === 0) continue;
       out.push({ ...e, counts: { races, candidates, positions, silent, stated: positions - silent } });
     }
     return out;
