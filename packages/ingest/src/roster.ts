@@ -25,6 +25,14 @@ export interface RosterEntry {
   name: string;
   /** The certified-ballot spelling when we have it; otherwise as filed. */
   displayName?: string;
+  /**
+   * The source's own rendering, when we had to derive `name` from it.
+   *
+   * The FEC stores "CAIN, BRISCOE ROWELL III"; a voter must not be shown that, so it
+   * is parsed. Parsing can be wrong, and keeping the input next to the output is what
+   * makes a wrong name findable later instead of permanent.
+   */
+  sourceName?: string;
   ballotOrder?: number;
   isWriteIn?: boolean;
   isPlaceholder?: boolean;

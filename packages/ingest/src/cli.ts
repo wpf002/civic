@@ -5,7 +5,8 @@ import { novemberCalendar, mayCalendar, iso, deadlinesNeedingReview } from "./ad
 import { resolveDistricts } from "./adapters/districts.js";
 import { fetchIsdRoster } from "./adapters/dallas-isd.js";
 import { fetchCouncilRoster } from "./adapters/dallas-city-secretary.js";
-import { resolveCouncilSeat } from "./seats.js";
+import { fetchFederalRosters } from "./adapters/fec.js";
+import { resolveCouncilSeat, resolveFederalSeat } from "./seats.js";
 import { diffRoster } from "./roster.js";
 
 const program = new Command("civic-ingest");
@@ -64,7 +65,7 @@ program
 program
   .command("ingest")
   .description("Fetch a roster and PERSIST it: snapshot, diff, and apply if additive.")
-  .requiredOption("--adapter <name>", "dallas-isd | dallas-city-secretary")
+  .requiredOption("--adapter <name>", "dallas-isd | dallas-city-secretary | fec")
   .requiredOption("--election <slug>", "e.g. 2027-11-dallas")
   .requiredOption("--date <yyyy-mm-dd>", "the election date the source must match")
   .option("--dry-run")
@@ -103,6 +104,23 @@ program
       }
       resolve = async (raceKey: string) => {
         const { raceId, reason } = await resolveCouncilSeat(o.election, raceKey);
+        if (!raceId) console.log(`  ! ${raceKey}: ${reason}`);
+        return raceId;
+      };
+    } else if (o.adapter === "fec") {
+      const cycle = Number(String(o.date).slice(0, 4));
+      const run = await fetchFederalRosters("TX", cycle, new Date());
+      rosters = run.rosters;
+      console.log(
+        `basis: ${run.basis} — ${run.candidateCount} statutory candidates across ` +
+          `${run.rosters.length} races. FILED is not the ballot: the FEC does not know ` +
+          `who qualified, so primary losers and inactive filers are included.`,
+      );
+      for (const m of run.merged) {
+        console.log(`  merged ${m.raceKey}: ${m.name} held ${m.candidateIds.length} FEC ids (${m.candidateIds.join(", ")})`);
+      }
+      resolve = async (raceKey: string) => {
+        const { raceId, reason } = await resolveFederalSeat(o.election, raceKey);
         if (!raceId) console.log(`  ! ${raceKey}: ${reason}`);
         return raceId;
       };

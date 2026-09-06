@@ -21,6 +21,53 @@
 import { prisma } from "@civic/db";
 import { placeSeatLabel } from "./adapters/dallas-city-secretary.js";
 
+/**
+ * `us-house-tx-07` → `District 7`, `us-senate-tx` → `Class II`.
+ *
+ * Same rule as the council places: the label is matched, never computed into a
+ * district by arithmetic. An unmapped race key resolves to nothing and quarantines.
+ */
+export function federalSeatLabel(raceKey: string): string | null {
+  const house = raceKey.match(/^us-house-[a-z]{2}-(\d{1,2})$/);
+  if (house) return `District ${Number(house[1])}`;
+  if (/^us-senate-[a-z]{2}$/.test(raceKey)) return "Class II";
+  return null;
+}
+
+/**
+ * Resolve a federal race key to a Race in a given election.
+ *
+ * Scoped to the office title as well as the seat label, because "District 7" is also
+ * a city council district and a school board district. Without the title, a
+ * congressional roster could land in a school board race.
+ */
+export async function resolveFederalSeat(
+  electionSlug: string,
+  raceKey: string,
+): Promise<SeatResolution> {
+  const seatLabel = federalSeatLabel(raceKey);
+  if (!seatLabel) {
+    return { raceId: null, reason: `"${raceKey}" is not a federal race key.` };
+  }
+  const title = raceKey.startsWith("us-senate")
+    ? "United States Senator"
+    : "United States Representative";
+
+  const races = await prisma.race.findMany({
+    where: { election: { slug: electionSlug }, office: { seatLabel, title } },
+  });
+  if (races.length === 0) {
+    return {
+      raceId: null,
+      reason: `No "${title}" office in ${electionSlug} carries seatLabel "${seatLabel}".`,
+    };
+  }
+  if (races.length > 1) {
+    return { raceId: null, reason: `${races.length} offices match "${title}" / "${seatLabel}".` };
+  }
+  return { raceId: races[0]!.id, reason: "" };
+}
+
 /** `dallas-council-place-7` → `Place 7`. Returns null for any other shape. */
 export function seatLabelForRaceKey(raceKey: string): string | null {
   const m = raceKey.match(/^dallas-council-place-(\d{1,2})$/);
