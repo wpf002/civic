@@ -14,6 +14,7 @@ import {
   score,
   type LabelSet,
 } from "./phase0.js";
+import { VERIFY_MODEL, directionRatio, runVerification } from "./verify.js";
 
 const program = new Command("civic-extract");
 
@@ -49,6 +50,49 @@ program
         `${report.rejectedQuotes} quotes dropped · ${report.refusals} refusals · ` +
         `${report.costCents.toFixed(2)}c` + (o.dryRun ? "  (dry run, nothing written)" : ""),
     );
+    await prisma.$disconnect();
+  });
+
+program
+  .command("verify")
+  .description("Re-check every draft position against its quote alone. Rejects the ones that do not hold up.")
+  .option("--election <slug>")
+  .option("--limit <n>", "cap positions checked", (v) => Number(v))
+  .option("--model <id>", "verifier model", VERIFY_MODEL)
+  .option("--dry-run")
+  .action(async (o) => {
+    const r = await runVerification({
+      ...(o.election ? { electionSlug: o.election } : {}),
+      ...(o.limit ? { limit: o.limit } : {}),
+      model: o.model,
+      dryRun: !!o.dryRun,
+    });
+
+    console.log(`checked ${r.checked} · upheld ${r.upheld} · rejected ${r.rejected} · ${r.costCents.toFixed(2)}c`);
+    console.log("\nwhy rejected:");
+    for (const [k, v] of Object.entries(r.failures).sort((a, b) => b[1] - a[1])) {
+      console.log(`  ${k.padEnd(20)} ${v}`);
+    }
+
+    // The number this whole pass exists to expose.
+    console.log(`\nsupport:oppose before  ${directionRatio(r.before)}`);
+    console.log(`support:oppose after   ${directionRatio(r.after)}`);
+    console.log("\nbefore:", JSON.stringify(r.before));
+    console.log("after: ", JSON.stringify(r.after));
+
+    if (r.examples.length) {
+      console.log("\nrejected examples:");
+      for (const e of r.examples.slice(0, 12)) {
+        console.log(`  [${e.failure}] ${e.candidate} · ${e.issue} · was ${e.was}`);
+        console.log(`     "${e.quote}"`);
+        console.log(`     ${e.reason}`);
+      }
+    }
+    if (r.errors.length) {
+      console.log("\nerrors:");
+      for (const e of r.errors) console.log(`  ! ${e}`);
+    }
+    if (o.dryRun) console.log("\n(dry run, nothing written)");
     await prisma.$disconnect();
   });
 
