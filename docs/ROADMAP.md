@@ -1,434 +1,205 @@
-# Civic — Build Roadmap
+# Civic — Roadmap
 
-Issue-first voter guide. A user picks an issue and sees where every candidate on their ballot stands, with the exact quote and source. Built for young and first-time voters. Nonpartisan by mechanism, not by claim.
+**Goal.** Any voter in the United States looks up their address and sees every election they can
+vote in — city, state and federal — and where each candidate stands on the issues, in the
+candidate's own words with a link to the source.
 
-Repo: `wpf002/civic`. Stack: TypeScript, pnpm, Turborepo, Next.js, Fastify, Prisma, Postgres, Railway. Model calls go through the seam in `packages/extract/src/llm.ts` (Anthropic API). Extraction is cross-checked by two independent models.
+**The product is the Position table.** `candidate × proposition` with a stance, a plain summary, a
+verbatim quote and a source URL. Everything a user sees is a view over it. If that table is accurate
+and covered, the app works. If it isn't, nothing else matters.
 
----
+**Nonpartisan by mechanism.** Positions are answers to a fixed neutral question, quotes are verbatim
+spans of an archived document, and absence is shown as absence. The system cannot express an opinion
+because there is nowhere for one to go.
 
-## 0. What this is and isn't
-
-**Is:** a structured database of candidate positions with provenance, and a thin mobile-web layer that lets someone look up an issue, compare candidates, take a short match quiz, and share the result.
-
-**Isn't:** a news app, a social network, a chatbot, a registration tool (that's an integration), or a place where users argue. No accounts in v1. No comments ever.
-
-**The product is the Position table.** Everything the user sees is a view over `candidate × issue`, with `stance`, `summary`, `quote`, `sourceUrl`, `publishedAt`. If that table is accurate and covered, the app works. If it isn't, nothing else matters.
-
-**Timeline reality.** Midterms are Nov 3, 2026. Not shippable by then. Targets:
-
-- **November 2, 2027 Dallas municipal election** (City Council all 14 districts + mayor, and 5 of 9 DISD trustee seats). Pilot. Small candidate pool, no APIs, worst-case data problem on purpose.
-
-  **Corrected 2026-09-03.** This was planned as May 1, 2027. That election does not exist: Dallas
-  voters passed Proposition D in Nov 2024 deleting the May requirement from the charter, and in
-  Nov 2025 the council voted 15-0 to move to November of odd years. DISD followed, changing trustee
-  terms from three years to four with 5 seats up in Nov 2027 and 4 in Nov 2029. See
-  `docs/RESEARCH_2026-09.md` §0 — this moves every calendar anchor below, changes the electorate
-  (May 2025 city turnout was 8.4%), and weakens the "nobody covers this race" premise, because
-  statewide guides cover a November constitutional-amendment ballot.
-- **March 2028 Texas primary, Nov 2028 general.** Real launch. Federal + state + Dallas County.
+Last revised 2026-09-06.
 
 ---
 
-## 1. Standing instructions for Claude Code
+## Where things actually stand
 
-Paste these into `CLAUDE.md` at the repo root.
+| | |
+|---|---|
+| Elections with real data | Texas general, Nov 3 2026 |
+| Races modelled | 39 (38 US House + 1 Senate) |
+| Certified candidates | 98 |
+| Candidate websites found | 187 of 241 (78%) |
+| Sites archived | 52 |
+| Published positions | **0** |
+| States with a working roster adapter | 2 (TX certified, NC filings) |
 
-```
-- Stack is fixed: TypeScript, pnpm, Turborepo, Next.js (app router), Fastify, Prisma, Postgres, Railway. Do not introduce Go, Python, Rust, GraphQL, tRPC, Supabase, Firebase, Drizzle, or a second ORM.
-- All model calls go through @civic/extract/src/llm.ts. That is the only file allowed to import an AI vendor SDK; no-vendor-sdk.test.ts enforces it.
-- Position rows are immutable once PUBLISHED. Corrections create a new row with supersedesId. Never UPDATE stance/summary/evidence on a PUBLISHED row.
-- Only PUBLISHED positions are readable from /v1. Enforce in the query, not the UI.
-- Every Position needs >= 1 Evidence row whose quote is a verbatim span of the archived source: same words, same order, same punctuation. The match ignores whitespace only, because sources are hard-wrapped and unwrapping alters nothing; `findVerbatim` in `packages/core` then stores the source's own span, so no model output ever reaches `Evidence.quote`. Extractor output that fails this check is rejected, never stored.
-- The matcher (@civic/core/src/match.ts) is deterministic and has no I/O. Same inputs, same output, always.
-- Quiz answers are never persisted. /v1/match is stateless. No analytics event may contain answer values.
-- NO_STATED_POSITION is a real value and is shown to users as "no stated position." Never fill it from party, endorsements, or other candidates.
-- Issue taxonomy lives in packages/db/src/seed.ts. Adding/renaming an issue requires a line in docs/TAXONOMY_CHANGELOG.md.
-- Local race data comes from data/manual/*.csv via the manual adapter. Do not scrape city/county sites without an adapter and a fixture test.
-- No user accounts, comments, likes, follows, or notifications until Phase 6. If a task seems to need them, stop and ask.
-- Every phase has acceptance criteria below. Do not start the next phase until they pass.
-```
+Working end to end: certified ballot → candidate websites → archived source → two-model extraction →
+adversarial verification → drafts with verbatim quotes. Nothing is published yet.
 
 ---
 
-## 2. GitHub repo setup
+## The shape of the problem
 
-```bash
-mkdir civic && cd civic
-git init -b main
-gh repo create wpf002/civic --private --source=. --remote=origin
-# or: git remote add origin git@github.com:wpf002/civic.git
+Three layers, and they are not equally hard. Every phase below is organised around this.
 
-# run bootstrap
-bash ../bootstrap.sh
+**Federal.** Solved. The FEC covers all 50 states for who filed; state certified lists say who is
+actually on the ballot.
 
-git add -A
-git commit -m "chore: bootstrap civic monorepo"
-git push -u origin main
+**State.** Per-state work. No national source exists — Google Civic is retired, Ballotpedia's API is
+paid, the Voting Information Project needs a partner relationship. Roughly 6 states publish a clean
+bulk file; another 15–20 publish something parseable; some publish nothing.
 
-# branch protection once CI exists
-gh api repos/wpf002/civic/branches/main/protection -X PUT \
-  -f required_status_checks[strict]=true \
-  -f required_status_checks[contexts][]=ci \
-  -f enforce_admins=false \
-  -f required_pull_request_reviews=null \
-  -f restrictions=null
-```
+**Municipal.** ~19,000 municipalities and ~13,000 school districts. **Do not model this as 32,000
+adapters.** Some states publish local candidates in the same file as everything else — North Carolina
+lists town mayors and county sheriffs in one CSV. Where the state does it, one adapter buys the whole
+state. Where it doesn't, it is city-by-city and only worth it for a specific pilot.
 
-Railway:
-
-```bash
-railway init            # project: civic
-railway add --database postgres
-railway service create api
-railway service create web
-railway variables set --service api DATABASE_URL='${{Postgres.DATABASE_URL}}' FLINT_BASE_URL=... ADMIN_TOKEN=...
-railway variables set --service web NEXT_PUBLIC_API_URL=https://<api-domain>
-```
-
-Root directory per service: `apps/api` and `apps/web`. Build command `pnpm install --frozen-lockfile && pnpm -w build`. Start `pnpm --filter @civic/api start` / `pnpm --filter @civic/web start`.
+**Coverage ceiling is a per-state fact, not a bug.** NC, MN and ME include county offices; CO, CA and
+FL stop at state level because county filings stay with county clerks. Store the ceiling with the
+rows, or a missing sheriff's race looks like a data error.
 
 ---
 
-## 3. Bootstrap script
+## Phase 1 — Make one election real, end to end  ← current
 
-`bootstrap.sh` ships alongside this doc. It writes:
+Texas, November 3 2026. Federal races only. The point is to publish something true, not something big.
 
-```
-civic/
-  apps/
-    api/            Fastify. /v1 public read + /match, /admin review console backend
-    web/            Next.js mobile-first. Issue browser, candidate pages, quiz, share card
-  packages/
-    db/             Prisma schema, client, seed (issue taxonomy + parties)
-    core/           Stance scale, deterministic matcher, extractor output schemas (zod)
-    ingest/         Source adapters (openstates, congress, fec, manual CSV). Produce Sources, never Positions
-    extract/        Model seam (llm.ts), extraction prompt, two-model reconcile, review queue writer
-  data/manual/      Per-election CSVs for races with no API
-  docs/             EDITORIAL_POLICY.md, TAXONOMY_CHANGELOG.md
-```
+- [x] Certified ballot from the Texas SOS (98 candidates, 39 races)
+- [x] Candidate websites from FEC Form 1, Congress.gov, OpenStates
+- [x] Archive websites as quotable sources
+- [x] Two-model extraction with a verbatim-quote gate
+- [x] Adversarial verification that rejects slogans, accomplishments and wrong directions
+- [x] Propositions — one neutral yes/no question per issue
+- [ ] Re-extract against propositions and measure the support/oppose ratio
+- [ ] Crawl `/issues`, `/platform`, `/priorities` rather than the homepage alone
+- [ ] Render JavaScript-only sites (3 known failures)
+- [ ] Publish the surviving positions
+- [ ] The web app shows a real Texas race with real quotes
 
-After running: `pnpm install && docker compose up -d && cp .env.example .env && pnpm db:migrate && pnpm db:seed && pnpm test`.
+**Done when:** a voter in a Texas congressional district can see every certified candidate, each
+candidate's answer to each proposition or an honest "no stated position", and click through to the
+archived source for every quote.
 
-The matcher tests in `packages/core` pass on a clean checkout. Verified.
-
----
-
-## 4. README scaffold
-
-```markdown
-# Civic
-
-See where every candidate on your ballot stands on the issues you care about. With the quote and the source.
-
-## What it does
-- Browse by issue → every candidate in your election, their stance, their words, the link
-- Candidate pages → all published positions, voting record for incumbents, coverage disclosure
-- Match quiz → 10-15 questions, weighted, deterministic ranking with a coverage score
-- Share card → one image, your top issues and closest matches
-
-## What it deliberately doesn't do
-No accounts. No comments. No inferred positions. No "we think." If a candidate hasn't said, it says "no stated position."
-
-## How positions get in
-1. `ingest` pulls candidate lists and source documents (sites, questionnaires, votes, transcripts)
-2. `extract` runs each source through two independent models. Agreement → DRAFT. Disagreement → review queue
-3. A human publishes. Every published position has a verbatim quote that string-matches the archived source
-4. Corrections supersede; history is public
-
-## Stack
-TypeScript · pnpm · Turborepo · Next.js · Fastify · Prisma · Postgres · Railway · Anthropic API
-
-## Dev
-pnpm install
-docker compose up -d
-cp .env.example .env
-pnpm db:migrate && pnpm db:seed
-pnpm dev
-
-## Layout
-apps/api · apps/web · packages/db · packages/core · packages/ingest · packages/extract · data/manual · docs
-
-## Editorial policy
-See docs/EDITORIAL_POLICY.md. Read it before touching the taxonomy, question wording, or summary style.
-```
+**Kill criterion:** if after crawling policy pages fewer than 30% of certified candidates have at
+least one verified position, the campaign-website source is not sufficient on its own and Phase 2
+becomes mandatory rather than optional.
 
 ---
 
-## 5. Data model
+## Phase 2 — Thicken what a position can come from
 
-Schema is in `packages/db/prisma/schema.prisma`. The spine:
+Campaign homepages are mostly biography. Measured yield on Texas was 17% of candidate-by-issue pairs
+before verification, and 34 of 98 candidates said anything at all. Ranked by how directly the
+candidate is speaking:
 
-```
-Jurisdiction (FEDERAL/STATE/COUNTY/CITY/SCHOOL_DISTRICT) ─┬─ District
-                                                          └─ Office ── Race ── Election
-                                                                          │
-                                                             Candidacy ───┘── Candidate ── Incumbency
-                                                                                 │
-Issue (fixed taxonomy) ─────────────────────────────── Position ── Evidence ── Source
-                                                         │
-                                                    VoteRecord (incumbents, ingested not extracted)
-QuizQuestion → Issue
-ReviewTask, ExtractRun, UserReport (ops)
-```
+- [ ] **Roll-call votes for incumbents.** A vote is a fact, not a claim — the strongest and most
+      neutral source available. Congress.gov for federal, OpenStates for state legislators. The
+      `VoteRecord` table already exists and is unused.
+- [ ] **Candidate questionnaires.** Vote411 / League of Women Voters, Vote Smart. The candidate
+      answers a fixed question, which is exactly the proposition shape.
+- [ ] **Deeper site crawling.** Policy content is usually one link off the homepage.
+- [ ] **Debate and forum transcripts** where they exist.
 
-Decisions locked:
+Explicitly not a source: campaign finance. Who funds a candidate is not a statement of what they
+would do, and treating it as one is the kind of inference this product exists to avoid.
 
-- **Position is append-only after publish.** `supersedesId` chain is the audit trail.
-- **Evidence is verbatim.** Quote ≤ ~60 words, matched against the archived source ignoring whitespace only; the stored quote is the source's own span, not the model's string. Extractor output failing this is dropped, not stored.
-- **Source has contentHash.** Same URL re-fetched with changed content is a new Source. Positions point at the version they came from.
-- **Stance is a 5-point scale plus NO_STATED_POSITION.** The matcher maps the five to −2..2 and skips NO_STATED entirely. Coverage is reported separately so a candidate with one position never outranks one with twelve.
-- **Issues carry `levels[]`.** "Foreign policy" doesn't show on a school board race. "Zoning" doesn't show on a Senate race.
-- **VoteRecord is ingested, not extracted.** Roll calls are structured data. The only model involvement is tagging bills to issues, and that goes through review.
-- **No User model.** Reports are rate-limited by IP hash. That's the entire user footprint.
+**Done when:** at least half of certified candidates in a covered race have one verified position,
+and incumbents have positions drawn from their votes rather than their marketing.
 
 ---
 
-## 5b. Build status (2026-09-04)
+## Phase 3 — Address to ballot
 
-What exists, against the phases below. Nothing here is a claim that a phase is *accepted* —
-acceptance criteria are unchanged and Phase 0's are not met.
+A user types an address and gets their races. Without this the data is not reachable by a voter.
 
-| Phase | Built | Not built |
+- [ ] Census geocoder → state, county, congressional district, state legislative districts
+- [ ] `openstates/jurisdictions` for OCD division IDs covering every municipality and school district
+- [ ] Wire the existing district resolver to the home page
+- [ ] Show the coverage ceiling honestly: "we have your congressional race; we do not yet have your
+      city council race"
+
+**Done when:** an address in a covered state returns the correct set of races, and an address in an
+uncovered one says so plainly instead of returning nothing.
+
+---
+
+## Phase 4 — More states, in the order they are actually available
+
+Six states publish a clean bulk file today. Each is one adapter with a fixture test.
+
+- [x] Texas — certified ballot, federal + state + county, no municipal
+- [x] North Carolina — filings, includes municipal and county
+- [ ] Virginia — carries an incumbent flag and a campaign website column
+- [ ] Minnesota — 372 offices, plus a separate local file
+- [ ] Maine — full county row officers
+- [ ] Colorado — state and judicial only; record the ceiling
+
+Then the second tier: Florida, South Dakota, Alaska. Michigan publishes no statewide list at all and
+points to 83 counties — do not schedule it.
+
+Two rules learned the hard way:
+- **Scrape the index page for the current file URL.** Several states embed a revision date in the
+  filename.
+- **A per-state adapter, not a vendor integration.** Texas's endpoint looked like a vendor pattern
+  that would generalise. It does not; Texas is a one-off.
+
+**Done when:** 6 states have adapters with fixture tests, and each records its own coverage ceiling.
+
+---
+
+## Phase 5 — Review at scale
+
+Every position is DRAFT until a person publishes it. That is the bottleneck, and it does not scale by
+adding people.
+
+- [x] Adversarial verifier that rejects positions a quote does not support
+- [ ] Review console shows verified drafts grouped by race, not one at a time
+- [ ] Spot-check sampling: a human reviews a random sample, and the sample's error rate decides
+      whether the batch publishes
+- [ ] Real authentication before a second reviewer exists
+
+**Done when:** publishing a race's positions takes minutes, and the error rate of published positions
+is measured rather than assumed.
+
+---
+
+## Phase 6 — The voter-facing product
+
+- [ ] Issue-first browse: pick a proposition, see every candidate's answer side by side
+- [ ] Candidate page: every proposition, answered or honestly blank
+- [ ] Match quiz — answers never leave the device, never persisted
+- [ ] Share card
+- [ ] Corrections log, public
+
+---
+
+## Standing rules
+
+These are in `CLAUDE.md` and are not negotiable per-phase.
+
+- Published positions are immutable. A correction is a new row with `supersedesId`.
+- Every position needs a verbatim quote from an archived source. Model output never reaches
+  `Evidence.quote`.
+- `NO_STATED_POSITION` is a real answer shown to users. Never filled from party or endorsements.
+- Quiz answers are never persisted.
+- A roster that shrinks never auto-applies. A candidate leaves the ballot only with a document.
+- Personal data in a government file — home addresses, phones, emails — is dropped at the parse
+  boundary, by allow-list.
+- Rewording a proposition mints a new version. Existing positions stay on the old wording and are
+  re-extracted, never migrated.
+
+---
+
+## Open questions, with the decision each one blocks
+
+| Question | Blocks | Status |
 |---|---|---|
-| 0 | Editorial policy + summary style guide; 20 issue descriptions, adversarially audited; taxonomy changelog 0001–0004 | Legal entity (**blocking**), human second reader, `SOURCES.md`, fidelity test on 5 real sites |
-| 1 | Schema with roster provenance; statutory calendar generator; address→district verified live; DISD and City Secretary adapters; shrink guard; snapshot/diff persistence; heartbeat | Railway cron wiring; `SeatUpForElection` rows; City Secretary wired into `cli ingest`; roll-call ingest |
-| 2 | Two-model extraction to DRAFT with review tasks; verbatim gate; review console with publish/reject/supersede | Real auth on `/admin`; re-extraction on contentHash change; vote tagging |
-| 3 | All six public routes plus methodology, corrections, report; design system; OG share card; 9-test Playwright suite | Address input wired to district lookup; Lighthouse run |
-| 4–6 | — | — |
-
-A caveat worth carrying forward: the fixture models council seats as "District 7", but the
-certified ballot labels them "Place 7". Both terms are live — the GIS layer returns
-`DISTRICT`, the ballot order prints `Place`. Wiring the City Secretary adapter into
-`cli ingest` needs that reconciled first, which is why it parses but does not yet persist.
+| Is the support/oppose skew the extractor or the candidates? | Whether propositions were sufficient | Re-extraction running |
+| What is the published error rate? | Whether AI review can gate publishing | Needs Phase 5 sampling |
+| Which states beyond the six are parseable? | Phase 4 ordering | 6 confirmed, ~6 unknown behind bot protection |
+| Is there any national municipal source? | Whether Phase 3 can promise local races | Answer so far: no |
 
 ---
 
-## 6. Phases
+## History
 
-### Phase 0 — Kill gate (2 weeks)
-
-Answer these before any app code past the bootstrap.
-
-0. **Entity and legal gate. Blocking; nothing else in Phase 0 matters if this fails.** Civic has
-   no legal entity and no funding model, and the landscape research contained zero legal, tax, or
-   regulatory sources. Decide the entity before writing the methodology page, because it determines
-   what the product may do. IRS Rev. Rul. 78-248 and 2007-41 govern 501(c)(3) voter guides:
-   candidate answers must be *unedited*, and the org must avoid stating its own position. An LLM
-   writing a two-sentence summary is editing; a weighted quiz emitting a ranked list of named
-   candidates is close to candidate rating. Under a c3 that is live exposure in a 2028 Texas cycle;
-   under an LLC it is fine and every grant source in this category is closed. Separately, TRAIGA
-   (HB 149, effective 2026-01-01, AG enforcement, penalties to $100k per violation) is an untested
-   Texas surface for an AI system publishing stance claims about named candidates. Get an opinion
-   from a nonprofit/election-law attorney in Texas. See `docs/RESEARCH_2026-09.md` §8.
-1. **Source inventory for the pilot.** List every November 2027 Dallas race. For each, what sources will exist? Candidate sites, Dallas Morning News questionnaires, League of Women Voters guide (VOTE411), forums, council voting records (incumbents), DISD board minutes. Write it down as `data/manual/2027-05-dallas/SOURCES.md`.
-2. **Editorial policy signed.** `docs/EDITORIAL_POLICY.md` finalized. Summary style guide with 10 good/bad examples.
-3. **Taxonomy frozen for the pilot.** 20 issues in seed.ts, each with a neutral one-paragraph description and a level mask. Reviewed by at least one person who'd vote differently than you.
-4. **Extraction fidelity test.** Take 5 real candidate websites from the 2025 Dallas municipal cycle. Hand-label positions. Run the extractor. Measure stance agreement and quote-validity rate.
-
-**Kill criteria:** if extractor stance agreement with hand labels is under 80% on the 5-site test, or under 40% of local candidates have any findable stated positions, the pilot scope changes (fewer races, or a "candidate questionnaire" outreach program becomes Phase 1). Don't build the UI against data that won't exist.
-
-5. **Published methodology page with an explicit generative-AI policy.** Every credible competitor
-   publishes a dated, versioned one; Civic ships a two-model LLM pipeline with none. Ballotpedia's
-   bar is the comparison Civic loses by default until it publishes.
-6. **Campaign-review protocol, written before first contact.** Adopt the guides.vote playbook: show
-   a campaign only its own column, hard deadline, publish without them, never give veto over
-   phrasing. Pre-declare the exact non-response string and the freeze date in the invitation, so a
-   data gap is a documented editorial act rather than a fight.
-
-**Acceptance:** entity decided and counsel's opinion on file; SOURCES.md; EDITORIAL_POLICY.md v1
-(done, including the summary style guide); TAXONOMY_CHANGELOG.md entries 0001-0002 (done, but the
-descriptions still need a *human* second reader — a model arguing both sides is not the same thing);
-METHODOLOGY.md published; fidelity numbers in `docs/PHASE0_RESULTS.md`.
-
-### Phase 1 — Data spine (4 weeks)
-
-Ingest architecture, sources and failure modes are specified in `docs/INGEST.md`, which
-was written from live probes of every source rather than from documentation. Read it
-before writing an adapter. The three findings that change the plan:
-
-1. **Texas election dates and the whole filing calendar need no source.** They are fixed
-   in statute as offsets from election day, so `tx-uniform-dates.ts` generates them as a
-   pure function. Built, with 9 tests. It is the fixed point every scraped source is
-   checked against — a source that has published nothing by the statutory filing deadline
-   is a fetch failure, not an empty field.
-2. **Address → district is fully solved, free and keyless.** Built and verified live in
-   `districts.ts`. Census for federal and state, city ArcGIS for council, DISD ArcGIS for
-   trustee.
-3. **No machine-readable source lists the November 2027 Dallas roster, and none will.**
-   The city publishes scanned PDFs in an IIS directory; DISD publishes an HTML page whose
-   slug rotates each cycle. Fetching and diffing is fully automatable; *accepting* a
-   roster change is not, and must never be.
-
-- Migrations applied on Railway Postgres.
-- `manual` adapter fully working: reads `candidates.csv` + `sources.csv`, upserts Jurisdiction/Office/Race/Candidate/Candidacy, fetches each source URL, normalizes to text, hashes, archives raw HTML/PDF to Railway volume or R2, writes Source rows.
-- `openstates` adapter: Texas legislators, districts, bills, votes → Incumbency + VoteRecord.
-- `congress` adapter (Congress.gov API): TX delegation, roll calls → VoteRecord.
-- `fec` adapter: federal candidate list for TX, external IDs only.
-- Address → districts: Census Geocoder (free) returns state/county/place/CD/SLDU/SLDL GEOIDs.
-  Google Civic's representatives endpoint is confirmed gone (2025-04-30). Dallas council resolves
-  keylessly against the city ArcGIS point query. **DISD does not need a PostGIS shapefile build** —
-  it publishes two public keyless ArcGIS feature services. They disagree: the same point returns
-  District 9 from `TrusteeDistricts` and District 5 from `DISD_Trustee_SMD_Adopted_Dec_16_2021`,
-  and the first returns all-zero `Population`/`Voting_Age`, which is what a draft redistricting
-  layer looks like. The real task is determining which layer is authoritative and versioned to the
-  November 2027 election — ask DISD in writing and record the answer. Verified 2026-09-03.
-- Schema additions the research says are missing, all cheap now and expensive later: split
-  `NO_STATED_POSITION` into found-and-silent vs. asked-and-declined; `sourceTier` on Evidence;
-  an evidence class on Position defined by source type rather than model confidence; archived
-  surrounding context alongside the matched span; separate `capturedAt` from `publishedAt`; a
-  media timestamp for forum audio/video; issue-per-office tagging; `isCertified` on Candidacy.
-  See `docs/RESEARCH_2026-09.md` §4.
-- Admin: Prisma Studio is enough. No custom admin UI yet.
-
-**Acceptance:** `pnpm ingest candidates --adapter manual --state TX --election 2027-11-02` populates every Dallas council + DISD race. `pnpm ingest documents --adapter manual` archives ≥ 1 source per declared candidate or logs a named gap. Address lookup returns correct council district for 20 test addresses. Zero Position rows exist yet.
-
-### Phase 2 — Extraction pipeline (4 weeks)
-
-- Extraction constrained server-side to `ExtractionOutputSchema` from `@civic/core` via structured outputs.
-- `extract run --all-unprocessed`: for each Source, `extractOnce` with model A and model B, `reconcile`, write agreed → Position DRAFT, flagged → ReviewTask. Record ExtractRun with cost.
-- Quote validation is the hard gate. Failed quotes are logged with the source and never stored.
-- Vote tagging: `civic.tag_votes` maps VoteRecord.billTitle → issueSlugs, always through review.
-- Review console: `apps/web/src/app/admin/*` behind ADMIN_TOKEN. Queue view, side-by-side model outputs on disagreement, one-click publish/reject/edit-then-publish. Editing creates a new DRAFT with `extractedBy: "human"`.
-- Re-extraction: when a Source's contentHash changes, old positions from that Source get a ReviewTask "source changed."
-
-**Acceptance:** Full Phase 0 fidelity set re-run through the pipeline; ≥ 85% stance agreement with hand labels on agreed outputs, 100% quote validity on stored rows. Review queue clears the Dallas pilot set in under 4 hours of human time. Per-candidate cost under $2.
-
-### Phase 3 — Public MVP, mobile web (5 weeks)
-
-Mobile web, not native. Shareable by link. No App Store gate.
-
-Routes:
-
-- `/` → "Where do you vote?" address input → election picker (only elections with published data)
-- `/e/[election]` → issue grid, filtered by level mask
-- `/e/[election]/i/[issue]` → every candidate in the election, stance chip, one-line summary, expandable quote + source link. NO_STATED shown explicitly.
-- `/c/[slug]` → candidate page: office, party, all published positions, voting record if incumbent, coverage bar ("positions found on 11 of 16 issues"), "report a problem" link
-- `/e/[election]/quiz` → 10-15 QuizQuestions, 5-point answer, importance weight, no persistence. Results computed client-side from `/v1/match` response. Shows match %, coverage %, per-issue breakdown.
-- `/e/[election]/quiz/card` → OG-image share card via `next/og`: top 3 issues, top 2 matches, coverage caveat, QR to the election page. Nothing about the user is in the URL. Card is generated from state passed in a signed, expiring query param that contains only issue slugs and candidate slugs.
-
-Design direction is specified in `docs/DESIGN.md`, derived from `docs/RESEARCH_2026-09.md`. Four
-things are load-bearing; the rest is house style:
-
-- **The Stance Rule.** Direction encoded by position on a five-cell track, intensity by ink value,
-  MIXED by shape. Hue never encodes politics. This is simultaneously the WCAG 1.4.1 argument and
-  the nonpartisanship argument — a product where color never codes a political direction cannot be
-  accused of coloring one side favorably, and that is a claim you can point at pixels to defend.
-- **The Silence Receipt.** NO_STATED_POSITION renders larger than a stance, never smaller or
-  greyed, with a dated enumeration of what was searched. Absence becomes evidence of absence.
-  Nobody can copy it without building the archive first.
-- **Quote-in-source with the verified span marked.** ~40 words of archived source with the verified
-  span in `<mark>`. `findVerbatim` already returns the offsets.
-- **Coverage ticks.** One tick per applicable issue — filled, hollow, or struck — plus a literal
-  fraction.
-
-Rules: every stance has its source one tap away. Every candidate row shows a coverage number. No
-photo cropping or filtering. **Ordering is ballot order, disclosed in a visible line; ties are
-shown as ties and broken by seeded shuffle, never alphabetically** — rank 1 alone is worth 2-6
-points of vote probability, so ordering is an intervention, not a presentation detail.
-
-**Do not sort issues by stance divergence.** It was proposed and it is wrong: divergence is computed
-only over filled cells, so in a sparse grid the default ordering of the main navigation is driven by
-which candidates generate the most extractable text. That is exactly the bias Velez identifies as
-the strongest fair criticism of this architecture. Use the taxonomy's editorial `sortOrder`.
-
-Table stakes the research says Civic lacks and users will expect: a saveable/printable ballot
-artifact (localStorage plus a share URL, no accounts); a public corrections log keyed to position
-IDs, because `supersedesId` is the best thing in the data model and is currently invisible; office
-explainers (what it does, term length, how many to vote for); inline issue definitions rather than
-tooltips; and Spanish at parity — which in Dallas is a source-scarcity problem, not a localization
-one, since Al Día stopped original reporting in 2023.
-
-**Acceptance:** Lighthouse mobile ≥ 90 performance, ≥ 95 accessibility. Quiz completes in under 2 minutes on a phone. Share card renders in < 1s. Zero server-side storage of answers (verified by DB inspection after a test session). Playwright smoke suite green.
-
-### Phase 4 — Dallas pilot (Jun–Nov 2027)
-
-- Data freeze T-3 weeks before election; post-freeze changes go through supersede + public changelog.
-- Outreach: UNT Dallas, SMU, UT Dallas, Dallas College student governments and campus papers. Tabling at registration drives. Give student journalists admin read access to the review history.
-- Candidate outreach: email every candidate a link to their own page with a "correct this" form that creates a ReviewTask. Log who responds.
-- Metrics (no user tracking): quiz starts/completes, share card renders, candidate page views, report submissions. Plausible or self-hosted, no cookies.
-
-**Targets:** 2,000 quiz completions, ≥ 15% card share rate, ≥ 1 campus paper article, candidate correction response rate ≥ 25%, published-data error rate found by users < 2%.
-
-**Post-pilot:** `docs/PILOT_RETRO.md`. What data was missing, what users reported, what the review queue cost in hours.
-
-### Phase 5 — Off-cycle retention (Dec 2027–Jun 2028)
-
-The business dies in odd years unless there's a reason to come back.
-
-- `/me` → "My representatives" from address: every current officeholder from city council to U.S. Senate. Their positions, their recent votes tagged by issue.
-- Vote digest: weekly page (no email, no accounts) per district showing how your reps voted on tagged bills. Static-generated.
-- Texas Legislature is out of session in 2027, so this is mostly Congress + Dallas council + DISD board.
-- Expand `openstates` + `congress` ingest to run on a schedule (Railway cron).
-
-**Acceptance:** Address → full rep list correct for 50 test addresses across Dallas County. Weekly digest generates without manual work.
-
-### Phase 6 — 2028 expansion (Dec 2027–Oct 2028)
-
-- Geography: all of Texas for federal + state; Dallas, Tarrant, Collin, Denton, Harris, Travis counties for local.
-- Sources: add VOTE411 (LWV) questionnaire adapter, Ballotpedia survey adapter, debate transcript ingestion.
-- Native apps: only if pilot share-rate data says push notifications would move retention. Otherwise PWA + add-to-homescreen.
-- Registration: VoteAmerica or Rock the Vote embed. No data passes through Civic.
-- Chatbot: RAG over the Position table only, through the same seam. Answers cite Position IDs. Refuses anything not in the table. Not before this phase.
-- Team: 2-3 part-time researchers (poli-sci students) on the review queue. Budget it.
-
-**Acceptance:** ≥ 90% of Texas state legislative candidates have ≥ 5 published positions by T-6 weeks before the March primary. Review queue SLA < 72h. Chatbot hallucination rate 0 on a 200-question eval (measured as "cited a position that doesn't exist").
-
----
-
-## 7. Cross-cutting workstreams
-
-**Testing.** Matcher: property tests (monotonic in agreement, permutation-invariant). Extractor: fixture sources with expected outputs, run in CI without model calls by injecting a recorded `CompleteFn` into `extractOnce`. API: contract tests that `/v1` never returns a non-PUBLISHED position. Web: Playwright for issue → candidate → quiz → card.
-
-**Security.** Admin routes behind real auth before the pilot (Clerk or Auth.js, admin-only, no public sign-up). Rate limits on `/match` and `/report`. CSP, no third-party scripts except analytics. Archived sources are read-only. Your offsec background is relevant here: assume campaigns will try to poison sources (edit their site the day before freeze, submit fake corrections). ContentHash + freeze + supersede history is the defense; document it.
-
-**Nonpartisanship as mechanism.** Same source-gathering checklist per candidate, logged. Alphabetical or ballot order only. Summary style guide enforced in review. Public changelog. Advisory reviewers from across the spectrum on taxonomy and question wording. Don't say "nonpartisan" anywhere you can't point to the process that makes it true.
-
-**Privacy.** No accounts, no answer storage, no third-party cookies, no address storage (geocode → district, discard). Texas Data Privacy and Security Act applies once you're at scale; being under the data thresholds is the strategy. Political opinions are sensitive data under most frameworks. Never collect them.
-
-**Data ops.** Every ExtractRun logs cost. Monthly report: sources fetched, positions published, review hours, cost per published position. If cost per position is over $5 by the 2028 cycle, the pipeline needs work before scaling geography.
-
-**Design.** Mobile-first, one-thumb, fast. Stance chips are the core visual. Share card is the growth mechanic; get a designer on it before the pilot, it has to look like something people want on their story. No party colors as UI colors.
-
----
-
-## 8. Money
-
-Users pay nothing. Options, in order of realism:
-
-1. Grants: Knight Foundation, Democracy Fund, Hewlett, MacArthur civic-tech lines. Apply after the pilot with real numbers.
-2. Institutional licensing: universities pay for a campus-branded deployment; county election offices license the local-race dataset.
-3. Data licensing: the Position table with provenance is a product. Newsrooms and academics will pay for structured, sourced local candidate data. Nobody has it.
-4. Nonprofit sponsorship: LWV-style orgs distribute it to members.
-
-Not ads. Ads on a political app is a bias story waiting to happen.
-
-Phase 0 through pilot runs on your time plus maybe $5-10K (researchers, designer, model spend). 2028 needs grant or license revenue to fund researchers.
-
----
-
-## 9. Risks
-
-| Risk | Signal | Response |
-|---|---|---|
-| Local candidates have no stated positions | Phase 0 test < 40% coverage | Candidate questionnaire program becomes core; NO_STATED shown prominently |
-| Extractor mislabels stance | Fidelity < 80% | Single-model → two-model → three-model with majority; more human review; narrower issue set |
-| Bias accusation | Any | Point at process, logs, changelog. Never argue positions. |
-| Source poisoning near freeze | ContentHash changes on many sources in final week | Freeze is hard; post-freeze changes flagged publicly |
-| Nobody shares the card | Pilot share rate < 5% | Card design, not product. Iterate the card. |
-| Odd-year death | Traffic → 0 after May 2027 | Phase 5 exists for this. If `/me` doesn't retain, reconsider the whole thing as a per-election utility with grant funding only. |
-| Review queue cost | > $5 / published position | Better source targeting, questionnaire program, fewer issues per level |
-| Legal entity forecloses funding, or c3 rules forecloses the product | Unresolved at Phase 0 exit | Blocking gate. IRS Rev. Rul. 78-248 / 2007-41 vs. TRAIGA; counsel before build |
-| Pilot election moves again | Council or DISD resolution | Already happened once, May → Nov 2027, and the plan did not notice for 10 months. Verify the date against the city secretary every quarter |
-| Extraction favors loud candidates | Incumbent coverage >> challenger coverage in the same race | Velez's critique, inherent to the architecture. Per-race parity invariant in the pipeline; coverage ticks make the asymmetry visible rather than hidden |
-| Matcher method determines the advice | Top match flips under a different distance function | Louwerse & Rosema showed this flips a majority of users. Publish the number; assert \|ASC\| < 0.15 in CI |
-| A competitor already claims the verbatim-verification differentiator | LikelyStance.com, launched 2026-06-10 | Unverified beyond a press release, UK constituency level. Watch it; the differentiator is the archive, not the claim |
-
----
-
-## 10. First week
-
-1. Run bootstrap, push, Railway up, migrations applied.
-2. Write `data/manual/2027-05-dallas/SOURCES.md` from the 2025 Dallas municipal cycle as a proxy.
-3. Hand-label 5 candidate sites.
-4. Set ANTHROPIC_API_KEY and run the fidelity test through `extractOnce`.
-5. Read the number. Decide.
+`docs/ROADMAP_ORIGINAL.md` is the plan this replaced. It targeted a May 2027 Dallas municipal
+election that does not exist — Proposition D in November 2024 removed the May requirement from the
+Dallas charter, and the council voted 15-0 in November 2025 to move to November of odd years. The
+Dallas pilot is still a good test of the municipal layer and is preserved as fixture data, but it is
+no longer the lead: the November 3 2026 general is the election that is actually live.
