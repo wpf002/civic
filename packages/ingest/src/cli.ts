@@ -317,6 +317,7 @@ program
 
     let stored = 0, unchanged = 0, tooThin = 0;
     const failed: string[] = [];
+    const outcomes: Record<string, number> = {};
     const queue = [...candidates];
 
     const worker = async () => {
@@ -324,12 +325,36 @@ program
         const c = queue.shift();
         if (!c) return;
         try {
-          const res = await fetch(c.websiteUrl!, { redirect: "follow", headers: { "user-agent": "civic-ingest/0.1 (voter guide; contact via repo)" } });
-          if (!res.ok) { failed.push(`${c.fullName}: HTTP ${res.status}`); continue; }
+          // A campaign site behind a CDN blocks an unfamiliar user-agent outright. The
+          // first version of this sent "civic-ingest/0.1" and collected 403s, which
+          // then counted as candidates with nothing to say — so the yield number was
+          // measuring this header as much as it measured the candidates.
+          const res = await fetch(c.websiteUrl!, {
+            redirect: "follow",
+            headers: {
+              "user-agent":
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 (+civic voter guide)",
+              accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              "accept-language": "en-US,en;q=0.9",
+            },
+          });
+          if (!res.ok) {
+            // Say WHY, so a blocked fetch is never mistaken for a silent candidate.
+            const why = res.status === 403 || res.status === 429 ? "blocked" : res.status === 404 ? "not found" : `HTTP ${res.status}`;
+            failed.push(`${c.fullName}: ${why} (${res.status})`);
+            outcomes[why] = (outcomes[why] ?? 0) + 1;
+            continue;
+          }
           const text = htmlToText(await res.text());
           // A JS-only page archives as a nav bar. Reported, never quietly stored as a
           // document the extractor will read as silence.
-          if (text.length < 400) { tooThin++; failed.push(`${c.fullName}: only ${text.length} chars of text (JS-rendered?)`); continue; }
+          if (text.length < 400) {
+            tooThin++;
+            outcomes["js-rendered"] = (outcomes["js-rendered"] ?? 0) + 1;
+            failed.push(`${c.fullName}: only ${text.length} chars of text (JS-rendered?)`);
+            continue;
+          }
 
           const contentHash = createHash("sha256").update(text).digest("hex");
           const existing = await prisma.source.findUnique({ where: { url_contentHash: { url: res.url, contentHash } } });
@@ -348,13 +373,21 @@ program
           });
           stored++;
         } catch (err) {
-          failed.push(`${c.fullName}: ${err instanceof Error ? err.message : String(err)}`);
+          const msg = err instanceof Error ? err.message : String(err);
+          const why = /ENOTFOUND|getaddrinfo|EAI_AGAIN/.test(msg) ? "dead domain" : "fetch error";
+          outcomes[why] = (outcomes[why] ?? 0) + 1;
+          failed.push(`${c.fullName}: ${why} — ${msg}`);
         }
       }
     };
     await Promise.all(Array.from({ length: Math.min(o.concurrency, queue.length) }, worker));
 
-    console.log(`\n${stored} archived, ${unchanged} unchanged, ${failed.length} failed (${tooThin} too thin to quote)`);
+    console.log(`\n${stored} archived, ${unchanged} unchanged, ${failed.length} failed`);
+    // A yield number is only honest next to the reasons it fell short. "Blocked" and
+    // "this candidate said nothing" are different facts and must never be one column.
+    for (const [k, v] of Object.entries(outcomes).sort((a, b) => b[1] - a[1])) {
+      console.log(`  ${k.padEnd(14)} ${v}`);
+    }
     for (const f of failed.slice(0, 15)) console.log(`  ! ${f}`);
     if (failed.length > 15) console.log(`  ... and ${failed.length - 15} more`);
     await prisma.$disconnect();
