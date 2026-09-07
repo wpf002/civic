@@ -358,6 +358,43 @@ model Issue {
   sortOrder   Int
   questions   QuizQuestion[]
   positions   Position[]
+  propositions Proposition[]
+}
+
+/// The question a stance is an answer to.
+///
+/// An issue is a topic, and a stance toward a topic has no direction: asking "where do
+/// you stand on Housing" scored a candidate who opposes density and one who wants more
+/// housing both as SUPPORT, because both plainly care about housing. That produced 128
+/// supporting stances against 5 opposing ones in the first real run.
+///
+/// A proposition is one sentence naming a specific change, so agreeing and disagreeing
+/// are exactly opposite and exactly one of them is true of any given candidate.
+///
+/// Versioned rather than edited. Reword a proposition and every stance recorded against
+/// it silently starts meaning something else, so a change mints a new version and the
+/// old positions stay attached to the wording they were actually judged against. Same
+/// rule as renaming an issue, and it needs the same TAXONOMY_CHANGELOG.md line.
+model Proposition {
+  id        String     @id @default(cuid())
+  issueId   String
+  issue     Issue      @relation(fields: [issueId], references: [id])
+  version   Int        @default(1)
+  /// The sentence itself. A voter sees this next to the answer.
+  text      String
+  /// What agreeing and disagreeing commit to. Kept symmetrical in tone and length.
+  yesMeans  String
+  noMeans   String
+  /// Which levels of government can actually act on this.
+  scope     String
+  /// Only one version is live per issue. Old versions stay for the positions on them.
+  isCurrent Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  retiredAt DateTime?
+  positions Position[]
+
+  @@unique([issueId, version])
+  @@index([issueId, isCurrent])
 }
 
 // Where a claim came from. One row per fetched document.
@@ -448,12 +485,17 @@ model Position {
   candidate    Candidate      @relation(fields: [candidateId], references: [id])
   issueId      String
   issue        Issue          @relation(fields: [issueId], references: [id])
+  /// The exact question this stance answers. Nullable only for rows written before
+  /// propositions existed; every new position sets it, and a stance whose proposition
+  /// has been superseded is not carried forward to the new wording.
+  propositionId String?
+  proposition   Proposition?  @relation(fields: [propositionId], references: [id])
   stance       Stance
   summary      String // <= 2 sentences, plain language, no adjectives about the candidate
   confidence   Float // 0..1 from extractor; reviewer may override
   status       PositionStatus @default(DRAFT)
   evidence     Evidence[]
-  extractedBy  String? // model id via Flint, or "human"
+  extractedBy  String? // model ids that agreed, or "human"
   extractRunId String?
   reviewedBy   String?
   reviewedAt   DateTime?

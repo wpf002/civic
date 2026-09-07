@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate",
     "seed:fixture": "dotenv -e ../../.env -- tsx src/seed-fixture.ts",
-    "seed:tx2026": "dotenv -e ../../.env -- tsx src/seed-tx-2026.ts"
+    "seed:tx2026": "dotenv -e ../../.env -- tsx src/seed-tx-2026.ts",
+    "seed:propositions": "dotenv -e ../../.env -- tsx src/seed-propositions.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",

@@ -61,7 +61,19 @@ export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
     throw new Error(`the two extractor models must differ (both are ${modelA})`);
   }
 
-  const issues = await prisma.issue.findMany({ orderBy: { sortOrder: "asc" } });
+  const issues = await prisma.issue.findMany({
+    orderBy: { sortOrder: "asc" },
+    include: { propositions: { where: { isCurrent: true }, take: 1 } },
+  });
+
+  // An issue with no live proposition has no question to answer, so it is skipped
+  // rather than extracted against its topic name.
+  const missing = issues.filter((i) => i.propositions.length === 0).map((i) => i.slug);
+  if (missing.length) {
+    console.warn(
+      `skipping ${missing.length} issue(s) with no current proposition: ${missing.join(", ")}`,
+    );
+  }
 
   const sources = await prisma.source.findMany({
     where: {
@@ -116,9 +128,18 @@ export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
         })
       ).map((c) => c.race.office.jurisdiction.level),
     );
-    const applicable = issues.filter((i) => i.levels.some((l) => levels.has(l)));
+    const applicable = issues.filter(
+      (i) => i.levels.some((l) => levels.has(l)) && i.propositions.length > 0,
+    );
     const issueSlugs = applicable.map((i) => i.slug);
     if (issueSlugs.length === 0) continue;
+    const propositions = applicable.map((i) => ({
+      issueSlug: i.slug,
+      text: i.propositions[0]!.text,
+      yesMeans: i.propositions[0]!.yesMeans,
+      noMeans: i.propositions[0]!.noMeans,
+    }));
+    const propositionByIssue = new Map(applicable.map((i) => [i.slug, i.propositions[0]!.id]));
 
     const detail: RunReport["details"][number] = {
       sourceUrl: source.url,
@@ -129,7 +150,7 @@ export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
     };
 
     try {
-      const input = { sourceText: source.text, issueSlugs };
+      const input = { sourceText: source.text, issueSlugs, propositions };
       const [a, b] = await Promise.all([
         extractOnce(input, modelA, opts.complete),
         extractOnce(input, modelB, opts.complete),
@@ -146,7 +167,13 @@ export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
 
       if (!opts.dryRun) {
         for (const p of agreed) {
-          const wrote = await writeDraft(source, p, run!.id, `${modelA}+${modelB}`);
+          const wrote = await writeDraft(
+            source,
+            p,
+            run!.id,
+            `${modelA}+${modelB}`,
+            propositionByIssue.get(p.issueSlug),
+          );
           if (wrote) report.drafts++;
         }
         for (const f of flagged) {
@@ -208,6 +235,7 @@ async function writeDraft(
   p: ExtractedPosition,
   extractRunId: string,
   extractedBy: string,
+  propositionId?: string,
 ): Promise<boolean> {
   const issue = await prisma.issue.findUnique({ where: { slug: p.issueSlug } });
   if (!issue || !source.candidateId) return false;
@@ -258,6 +286,7 @@ async function writeDraft(
       status: "DRAFT",
       extractedBy,
       extractRunId,
+      ...(propositionId ? { propositionId } : {}),
       ...(evidenceId ? { evidence: { connect: { id: evidenceId } } } : {}),
     },
   });

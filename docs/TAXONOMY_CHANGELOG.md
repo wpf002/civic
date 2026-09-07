@@ -109,3 +109,32 @@ Deliberately left at `ALL`: `taxes-budget` (a district sets a tax rate), `econom
 (teacher pay is in the description), `transportation-infrastructure` (school bus service),
 `public-safety-policing` (officers assigned to schools), and the civil-rights pair (both
 reach school settings directly). Each of those is a decision a trustee actually makes.
+
+## 0005 — Issues become questions
+
+Every issue now carries a **proposition**: one sentence naming a specific policy change that a
+candidate can agree or disagree with. Positions are recorded against the proposition, not the topic.
+
+**Why.** An issue was a topic, and a stance toward a topic has no direction. Asked "where does this
+candidate stand on Housing", the extractor scored Bill Roth, who opposes high-density development,
+and Chad West, who wants more housing built, both as SUPPORT — because both plainly care about
+housing. Across the first real Texas run that produced 128 supporting stances against 5 opposing
+ones, roughly 20 to 1. "Opposes X" and "supports not-X" were collapsing into one label.
+
+With a proposition, exactly one of those two candidates is a yes.
+
+**How the propositions were written.** Each one was drafted, then attacked by three independent
+reviewers — one reading for wording that disadvantages progressive positions, one for wording that
+disadvantages conservative positions, and one ordinary voter checking it could be understood and
+answered on a single read. A proposition was only accepted once it survived all three, or once the
+drafter gave a stated reason for rejecting a critique. Two were rewritten from scratch after they
+duplicated a neighbouring issue's question.
+
+**Versioning.** Propositions are versioned and never edited in place. Rewording one mints a new
+version and retires the old; existing positions stay attached to the wording they were actually
+judged against and are NOT carried forward. A stance recorded against one sentence does not mean the
+same thing under a different sentence, and migrating it silently would put words in a candidate's
+mouth. Any wording change needs a new entry in this file.
+
+**Consequences.** Positions extracted before this entry have no proposition and are not comparable
+with ones extracted after it. They are re-extracted rather than migrated.

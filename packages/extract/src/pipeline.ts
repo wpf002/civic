@@ -7,9 +7,24 @@ import {
 import { complete, type CompleteFn } from "./llm.js";
 import { EXTRACT_SYSTEM } from "./prompts/extract-positions.js";
 
+export interface Proposition {
+  issueSlug: string;
+  text: string;
+  yesMeans: string;
+  noMeans: string;
+}
+
 export interface ExtractInput {
   sourceText: string;
   issueSlugs: string[];
+  /**
+   * The question each issue's stance answers.
+   *
+   * Optional only so existing tests can pass a bare issue list. When absent the model
+   * is shown slugs alone, which is the behaviour that produced 128 supporting stances
+   * against 5 opposing ones — a stance toward a topic has no direction.
+   */
+  propositions?: Proposition[];
 }
 
 export interface ExtractOutcome {
@@ -17,6 +32,21 @@ export interface ExtractOutcome {
   positions: ExtractedPosition[];
   rejected: Array<{ position: ExtractedPosition; reason: string }>;
   costCents: number;
+}
+
+/** Show the model the actual question, not the topic name. */
+function renderInput(input: ExtractInput): string {
+  const list = input.propositions?.length
+    ? input.propositions
+        .map(
+          (p, i) =>
+            `${i + 1}. issueSlug: ${p.issueSlug}\n   QUESTION: ${p.text}\n` +
+            `   agreeing means: ${p.yesMeans}\n   disagreeing means: ${p.noMeans}`,
+        )
+        .join("\n\n")
+    : input.issueSlugs.map((s, i) => `${i + 1}. issueSlug: ${s}`).join("\n");
+
+  return `PROPOSITIONS:\n${list}\n\nDOCUMENT:\n${input.sourceText}`;
 }
 
 /**
@@ -31,7 +61,7 @@ export async function extractOnce(
   const res = await fn({
     model,
     system: EXTRACT_SYSTEM,
-    input: `ISSUES: ${input.issueSlugs.join(", ")}\n\nDOCUMENT:\n${input.sourceText}`,
+    input: renderInput(input),
     schema: LenientExtractionOutputSchema,
   });
 
