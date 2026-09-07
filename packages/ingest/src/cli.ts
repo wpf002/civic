@@ -19,7 +19,7 @@ import { NOVEMBER_2026, fetchCertifiedRoster } from "./adapters/tx-sos.js";
 import { resolveCouncilSeat, resolveFederalSeat } from "./seats.js";
 import { proposePairsInRace } from "@civic/core";
 import { createHash } from "node:crypto";
-import { htmlToText } from "./html-text.js";
+import { crawlCampaignSite } from "./crawl.js";
 import { diffRoster, nameKey } from "./roster.js";
 
 const program = new Command("civic-ingest");
@@ -301,95 +301,74 @@ program
 
 program
   .command("archive")
-  .description("Fetch each candidate's website and store it as a Source the extractor can quote.")
+  .description("Crawl each candidate's site for pages that state positions, and store them as Sources.")
   .requiredOption("--election <slug>")
   .option("--certified-only", "only candidates on the certified ballot")
-  .option("--concurrency <n>", "parallel fetches", (v) => Number(v), 6)
+  .option("--concurrency <n>", "parallel sites", (v) => Number(v), 4)
+  .option("--home-only", "fetch only the homepage (the old behaviour)")
   .action(async (o) => {
     const candidates = await prisma.candidate.findMany({
       where: {
-        candidacies: { some: { race: { election: { slug: o.election } }, ...(o.certifiedOnly ? { isCertified: true } : {}) } },
+        candidacies: { some: { race: { election: { slug: o.election } } }, ...(o.certifiedOnly ? { some: { race: { election: { slug: o.election } }, isCertified: true } } : {}) },
         NOT: { websiteUrl: null },
       },
       select: { id: true, fullName: true, websiteUrl: true },
     });
     console.log(`${candidates.length} candidates with a website`);
 
-    let stored = 0, unchanged = 0, tooThin = 0;
-    const failed: string[] = [];
+    let stored = 0, unchanged = 0, sitesWithPolicy = 0, sitesEmpty = 0;
     const outcomes: Record<string, number> = {};
+    const empty: string[] = [];
     const queue = [...candidates];
 
     const worker = async () => {
       for (;;) {
         const c = queue.shift();
         if (!c) return;
-        try {
-          // A campaign site behind a CDN blocks an unfamiliar user-agent outright. The
-          // first version of this sent "civic-ingest/0.1" and collected 403s, which
-          // then counted as candidates with nothing to say — so the yield number was
-          // measuring this header as much as it measured the candidates.
-          const res = await fetch(c.websiteUrl!, {
-            redirect: "follow",
-            headers: {
-              "user-agent":
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 (+civic voter guide)",
-              accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-              "accept-language": "en-US,en;q=0.9",
-            },
-          });
-          if (!res.ok) {
-            // Say WHY, so a blocked fetch is never mistaken for a silent candidate.
-            const why = res.status === 403 || res.status === 429 ? "blocked" : res.status === 404 ? "not found" : `HTTP ${res.status}`;
-            failed.push(`${c.fullName}: ${why} (${res.status})`);
-            outcomes[why] = (outcomes[why] ?? 0) + 1;
-            continue;
-          }
-          const text = htmlToText(await res.text());
-          // A JS-only page archives as a nav bar. Reported, never quietly stored as a
-          // document the extractor will read as silence.
-          if (text.length < 400) {
-            tooThin++;
-            outcomes["js-rendered"] = (outcomes["js-rendered"] ?? 0) + 1;
-            failed.push(`${c.fullName}: only ${text.length} chars of text (JS-rendered?)`);
-            continue;
-          }
+        const r = await crawlCampaignSite(c.websiteUrl!, {
+          ...(o.homeOnly ? { probePaths: [], maxLinks: 0 } : {}),
+        });
+        for (const [k, v] of Object.entries(r.outcomes)) outcomes[k] = (outcomes[k] ?? 0) + v;
 
-          const contentHash = createHash("sha256").update(text).digest("hex");
-          const existing = await prisma.source.findUnique({ where: { url_contentHash: { url: res.url, contentHash } } });
+        if (r.pages.length === 0) {
+          sitesEmpty++;
+          empty.push(`${c.fullName}: nothing archivable (${Object.keys(r.outcomes).join(", ") || "no pages"})`);
+          continue;
+        }
+        // A site whose only page is the homepage is a poster. Counting it as covered
+        // is what made the first yield number meaningless.
+        if (r.pages.some((p) => p.via !== "home")) sitesWithPolicy++;
+
+        for (const pg of r.pages) {
+          const contentHash = createHash("sha256").update(pg.text).digest("hex");
+          const existing = await prisma.source.findUnique({ where: { url_contentHash: { url: pg.url, contentHash } } });
           if (existing) { unchanged++; continue; }
           await prisma.source.create({
             data: {
               kind: "CANDIDATE_WEBSITE",
               tier: "CAMPAIGN_PLATFORM",
-              url: res.url,
-              title: `${c.fullName} — campaign website`,
+              url: pg.url,
+              title: `${c.fullName} — ${pg.via === "home" ? "campaign website" : "policy page"}`,
               capturedAt: new Date(),
               contentHash,
-              text,
+              text: pg.text,
               candidateId: c.id,
             },
           });
           stored++;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          const why = /ENOTFOUND|getaddrinfo|EAI_AGAIN/.test(msg) ? "dead domain" : "fetch error";
-          outcomes[why] = (outcomes[why] ?? 0) + 1;
-          failed.push(`${c.fullName}: ${why} — ${msg}`);
         }
       }
     };
     await Promise.all(Array.from({ length: Math.min(o.concurrency, queue.length) }, worker));
 
-    console.log(`\n${stored} archived, ${unchanged} unchanged, ${failed.length} failed`);
-    // A yield number is only honest next to the reasons it fell short. "Blocked" and
-    // "this candidate said nothing" are different facts and must never be one column.
+    console.log(`\n${stored} pages archived, ${unchanged} unchanged`);
+    console.log(`${sitesWithPolicy} of ${candidates.length} sites had a page beyond the homepage`);
+    console.log(`${sitesEmpty} sites yielded nothing`);
     for (const [k, v] of Object.entries(outcomes).sort((a, b) => b[1] - a[1])) {
-      console.log(`  ${k.padEnd(14)} ${v}`);
+      console.log(`  ${k.padEnd(16)} ${v}`);
     }
-    for (const f of failed.slice(0, 15)) console.log(`  ! ${f}`);
-    if (failed.length > 15) console.log(`  ... and ${failed.length - 15} more`);
+    for (const e of empty.slice(0, 12)) console.log(`  ! ${e}`);
+    if (empty.length > 12) console.log(`  ... and ${empty.length - 12} more`);
     await prisma.$disconnect();
   });
 
