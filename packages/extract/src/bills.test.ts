@@ -112,7 +112,12 @@ describe("the policy-area pre-filter", () => {
 
   it("checks everything when the subject is unknown, rather than dropping the bill", async () => {
     // Silently skipping would remove a vote from a candidate's record.
-    for (const area of [null, undefined, "Some New Category"]) {
+    const noArea = await proposeMappings([BILL], props, {
+      dryRun: true,
+      complete: reply({ bearsOn: false, yeaMeans: null, basis: "", reasoning: "" }),
+    });
+    expect(noArea.pairsChecked).toBe(3);
+    for (const area of [null, "Some New Category"] as Array<string | null>) {
       const r = await proposeMappings([{ ...BILL, policyArea: area }], props, {
         dryRun: true,
         complete: reply({ bearsOn: false, yeaMeans: null, basis: "", reasoning: "" }),

@@ -15,7 +15,7 @@ import {
   type LabelSet,
 } from "./phase0.js";
 import { VERIFY_MODEL, directionRatio, runVerification } from "./verify.js";
-import { proposeMappings, type BillInput } from "./bills.js";
+import { proposeMappings, verifyMappings, type BillInput } from "./bills.js";
 
 const program = new Command("civic-extract");
 
@@ -129,6 +129,20 @@ program
       `\nAll PROPOSED. Nothing becomes a position until a person confirms it — this is ` +
         `the one point where a recorded fact becomes an interpreted claim.`,
     );
+    await prisma.$disconnect();
+  });
+
+program
+  .command("verify-bills")
+  .description("Try to refute each proposed bill mapping. Confirms only the ones that survive.")
+  .option("--dry-run")
+  .action(async (o) => {
+    const r = await verifyMappings({ dryRun: !!o.dryRun });
+    console.log(`checked ${r.checked} · confirmed ${r.upheld} · refuted ${r.refuted} · ${r.costCents.toFixed(2)}c`);
+    for (const x of r.rejections) {
+      console.log(`\n  REFUTED ${x.billId} -> ${x.issueSlug}`);
+      console.log(`     ${x.reason.slice(0, 320)}`);
+    }
     await prisma.$disconnect();
   });
 

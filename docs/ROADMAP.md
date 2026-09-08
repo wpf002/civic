@@ -87,9 +87,18 @@ Campaign homepages are mostly biography. Measured yield on Texas was 17% of cand
 before verification, and 34 of 98 candidates said anything at all. Ranked by how directly the
 candidate is speaking:
 
-- [ ] **Roll-call votes for incumbents.** A vote is a fact, not a claim — the strongest and most
-      neutral source available. Congress.gov for federal, OpenStates for state legislators. The
-      `VoteRecord` table already exists and is unused.
+- [x] **Roll-call votes for incumbents.** Built, measured, and it yields almost nothing. 3,936
+      votes across 164 bills for 25 sitting members. Of 95 bills with an official summary, the
+      classifier proposed 3 mappings to a proposition and an adversarial second pass refuted all 3
+      — a DOJ reporting requirement about cashless-bail jurisdictions, a duty-free extension for
+      Haitian apparel, and a non-binding resolution praising past tax relief. None was a vote on the
+      change its proposition describes.
+
+      **This is a finding, not a failure.** A vote is the strongest evidence available in
+      principle, and in practice congressional roll calls are overwhelmingly procedural, narrow, or
+      commemorative. The apparatus is built and correct; a wider window of votes, or votes on a
+      cycle with more floor activity on these questions, may yield more. Do not plan coverage
+      around it.
 - [ ] **Candidate questionnaires.** Vote411 / League of Women Voters, Vote Smart. The candidate
       answers a fixed question, which is exactly the proposition shape.
 - [ ] **Deeper site crawling.** Policy content is usually one link off the homepage.

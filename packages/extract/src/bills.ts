@@ -236,3 +236,120 @@ export function stanceFromVote(voteCast: string, yeaMeans: string): string | nul
   };
   return flip[yeaMeans] ?? null;
 }
+
+// ---------------------------------------------------------------- verification
+
+/**
+ * An independent second look at a proposed mapping.
+ *
+ * The classifier hedged in its own reasoning on all three of its first mappings —
+ * "it does not itself mandate money bail", "the effect is narrow", "it is a
+ * non-binding expression of sentiment" — and approved every one anyway. A model
+ * asked "does this bear on that" will find a thread connecting almost any two
+ * things. Asked instead to REFUTE, it has to defend the connection.
+ *
+ * The bar is deliberately high, because a wrong mapping is worse here than anywhere
+ * else in the pipeline: it attaches a position to every member who voted, at once,
+ * from a vote they cast about something else.
+ */
+export const REFUTE_SYSTEM = `You are checking a claim that a vote on a bill tells a voter where a
+legislator stands on a specific proposition. Your job is to REFUTE it if you can.
+
+The claim is only sound if a legislator voting on this bill was, in substance, voting on the change
+the proposition describes. Reject it if any of these is true:
+
+- The bill is about the same broad subject but a different decision. Adjacent is not the same.
+- The bill is procedural, a reporting or study requirement, a resolution expressing sentiment, or
+  otherwise changes no rule. A vote on whether to publish a list about a policy is not a vote on the
+  policy.
+- The bill's effect on the proposition is incidental, narrow, or technical. A trade preference for
+  one country's apparel imports is not an answer to whether this government should raise taxes, even
+  though duties are technically a tax.
+- The direction is wrong, or the connection only holds if you assume why the sponsor wrote it.
+- The summary does not establish what the bill does.
+
+Default to refuting. If you find yourself writing "it does not itself..." or "the effect is narrow"
+or "although it is non-binding", you have already refuted it — say so rather than approving it with
+a caveat.
+
+A wrong mapping attaches a position to every member who voted on that bill, from a vote they cast
+about something else. That is worse than having no position for them at all.`;
+
+export const RefutationSchema = z.object({
+  holdsUp: z.boolean(),
+  reason: z.string().max(600),
+});
+
+export interface RefuteReport {
+  checked: number;
+  upheld: number;
+  refuted: number;
+  costCents: number;
+  rejections: Array<{ billId: string; issueSlug: string; reason: string }>;
+}
+
+export async function verifyMappings(
+  opts: { dryRun?: boolean; model?: string; complete?: CompleteFn; concurrency?: number } = {},
+): Promise<RefuteReport> {
+  const model = opts.model ?? MAP_MODEL;
+  const fn = opts.complete ?? complete;
+
+  const proposed = await prisma.billProposition.findMany({
+    where: { status: "PROPOSED" },
+    include: { proposition: { include: { issue: { select: { slug: true } } } } },
+  });
+
+  const report: RefuteReport = { checked: 0, upheld: 0, refuted: 0, costCents: 0, rejections: [] };
+  const queue = [...proposed];
+
+  const worker = async () => {
+    for (;;) {
+      const m = queue.shift();
+      if (!m) return;
+      try {
+        const res = await fn({
+          model,
+          system: REFUTE_SYSTEM,
+          input:
+            `PROPOSITION: ${m.proposition.text}\n` +
+            `  agreeing means: ${m.proposition.yesMeans}\n` +
+            `  disagreeing means: ${m.proposition.noMeans}\n\n` +
+            `CLAIM: a Yea on ${m.billId} means ${m.yeaMeans} on this proposition.\n\n` +
+            `BASIS OFFERED, quoted from the official summary:\n${m.basis}\n\n` +
+            `REASONING OFFERED:\n${m.reasoning}`,
+          schema: RefutationSchema,
+        });
+        report.costCents += res.costCents;
+        report.checked++;
+
+        if (res.output.holdsUp) {
+          report.upheld++;
+          if (!opts.dryRun) {
+            await prisma.billProposition.update({
+              where: { id: m.id },
+              data: { status: "CONFIRMED", decidedBy: `verifier:${model}`, decidedAt: new Date() },
+            });
+          }
+        } else {
+          report.refuted++;
+          report.rejections.push({
+            billId: m.billId,
+            issueSlug: m.proposition.issue.slug,
+            reason: res.output.reason,
+          });
+          if (!opts.dryRun) {
+            await prisma.billProposition.update({
+              where: { id: m.id },
+              data: { status: "REJECTED", decidedBy: `verifier:${model}`, decidedAt: new Date() },
+            });
+          }
+        }
+      } catch {
+        report.checked++;
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(opts.concurrency ?? 6, queue.length) }, worker));
+  return report;
+}
