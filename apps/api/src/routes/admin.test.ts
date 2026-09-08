@@ -336,3 +336,63 @@ describe("merging two records that are the same person", () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+describe("publishing a batch", () => {
+  it("refuses a stance with no evidence, exactly as it does singly", async () => {
+    const issue = await prisma.issue.findFirstOrThrow();
+    const cand = await prisma.candidate.create({
+      data: { slug: "zz-batch-test", fullName: "ZZ Batch Test" },
+    });
+    const bare = await prisma.position.create({
+      data: {
+        candidateId: cand.id,
+        issueId: issue.id,
+        stance: "SUPPORT",
+        summary: "x",
+        confidence: 0.9,
+        status: "IN_REVIEW",
+      },
+    });
+    const absence = await prisma.position.create({
+      data: {
+        candidateId: cand.id,
+        issueId: issue.id,
+        stance: "NO_STATED_POSITION",
+        summary: "The page does not say.",
+        confidence: 0.9,
+        status: "DRAFT",
+      },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/admin/positions/publish-batch",
+      headers: { authorization: `Bearer ${TOKEN}`, "x-reviewer": "Reviewer" },
+      payload: { ids: [bare.id, absence.id] },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+
+    // An absence carries no quote by definition and publishes. A stance without one
+    // does not, and the refusal is itemised rather than failing the whole batch.
+    expect(body.published).toBe(1);
+    expect(body.refused).toHaveLength(1);
+    expect(body.refused[0].why).toMatch(/no evidence/);
+
+    expect((await prisma.position.findUniqueOrThrow({ where: { id: bare.id } })).status).toBe("IN_REVIEW");
+    expect((await prisma.position.findUniqueOrThrow({ where: { id: absence.id } })).status).toBe("PUBLISHED");
+
+    await prisma.position.deleteMany({ where: { candidateId: cand.id } });
+    await prisma.candidate.delete({ where: { id: cand.id } });
+  });
+
+  it("requires a named reviewer", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/admin/positions/publish-batch",
+      headers: { authorization: `Bearer ${TOKEN}` },
+      payload: { ids: ["x"] },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});

@@ -68,6 +68,7 @@ program
   .description("Publish positions that survived verification. Goes through the admin API, never straight to the database.")
   .option("--election <slug>")
   .option("--limit <n>", "cap", (v) => Number(v))
+  .option("--absences", "also publish 'no stated position', for candidates we archived something for")
   .requiredOption("--reviewer <name>", "who is accountable for what goes live")
   .option("--api <url>", "admin API base", process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000")
   .option("--dry-run")
@@ -77,9 +78,26 @@ program
 
     // Only IN_REVIEW: the verifier moves a position there when a quote survived an
     // independent reading. A DRAFT has not been checked and does not go live.
+    //
+    // With --absences, also publish NO_STATED_POSITION rows — but ONLY for candidates
+    // we actually archived something for. "This candidate has not stated a position"
+    // is a claim about them; "we have not researched this candidate" is a claim about
+    // us, and publishing the second as the first is the worst thing this product can
+    // do. A candidate with no archived source gets neither.
     const ready = await prisma.position.findMany({
       where: {
-        status: "IN_REVIEW",
+        ...(o.absences
+          ? {
+              OR: [
+                { status: "IN_REVIEW" },
+                {
+                  status: "DRAFT",
+                  stance: { in: ["NO_STATED_POSITION", "DECLINED_TO_STATE"] },
+                  candidate: { sources: { some: { NOT: { text: "" } } } },
+                },
+              ],
+            }
+          : { status: "IN_REVIEW" }),
         NOT: { propositionId: null },
         ...(o.election
           ? { candidate: { candidacies: { some: { race: { election: { slug: o.election } } } } } }
@@ -89,11 +107,41 @@ program
       ...(o.limit ? { take: o.limit } : {}),
     });
 
-    console.log(`${ready.length} verified positions ready`);
+    console.log(`${ready.length} positions ready`);
     let published = 0;
     const refused: string[] = [];
 
-    for (const p of ready) {
+    // Absences are numerous by nature — a candidate who addresses three issues is
+    // silent on seventeen — so they go in batches. Same checks, one decision.
+    const absences = ready.filter(
+      (p) => p.stance === "NO_STATED_POSITION" || p.stance === "DECLINED_TO_STATE",
+    );
+    const stated = ready.filter((p) => !absences.includes(p));
+
+    for (let i = 0; i < absences.length; i += 500) {
+      const batch = absences.slice(i, i + 500);
+      if (o.dryRun) { published += batch.length; continue; }
+      const res = await fetch(`${o.api}/admin/positions/publish-batch`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+          "x-reviewer": o.reviewer,
+        },
+        body: JSON.stringify({ ids: batch.map((p) => p.id) }),
+      });
+      if (res.ok) {
+        const r = (await res.json()) as { published: number; refused: Array<{ why: string }> };
+        published += r.published;
+        for (const x of r.refused.slice(0, 3)) refused.push(`batch: ${x.why}`);
+      } else {
+        refused.push(`batch of ${batch.length}: ${res.status}`);
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+      process.stderr.write(`  absences ${Math.min(i + 500, absences.length)}/${absences.length}\n`);
+    }
+
+    for (const p of stated) {
       // The API refuses a stance with no evidence. Checking here too so the reason is
       // visible in this output rather than only as a 422.
       const isAbsence = p.stance === "NO_STATED_POSITION" || p.stance === "DECLINED_TO_STATE";

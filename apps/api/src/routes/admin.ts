@@ -258,6 +258,52 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
+  /**
+   * Publish many positions in one reviewed decision.
+   *
+   * Exists because absences are numerous by nature — a candidate who addresses three
+   * issues is silent on seventeen — and publishing them one HTTP call at a time is
+   * hours of work for one decision a person already made.
+   *
+   * Every per-row rule still applies. A stance with no evidence is refused here
+   * exactly as it is refused singly, and the refusals come back itemised rather than
+   * failing the batch: a caller must be able to see which rows did not go live.
+   */
+  app.post("/positions/publish-batch", async (req, reply) => {
+    const body = z.object({ ids: z.array(z.string()).min(1).max(500) }).parse(req.body);
+    const who = reviewer(req);
+    if (!who) return reply.code(400).send({ error: "x-reviewer header is required" });
+
+    const rows = await prisma.position.findMany({
+      where: { id: { in: body.ids } },
+      include: { evidence: { select: { id: true } } },
+    });
+
+    const publishable: string[] = [];
+    const refused: Array<{ id: string; why: string }> = [];
+
+    for (const p of rows) {
+      if (p.status === "PUBLISHED") {
+        refused.push({ id: p.id, why: "already published" });
+        continue;
+      }
+      const isAbsence = p.stance === "NO_STATED_POSITION" || p.stance === "DECLINED_TO_STATE";
+      if (!isAbsence && p.evidence.length === 0) {
+        refused.push({ id: p.id, why: "a stance with no evidence cannot be published" });
+        continue;
+      }
+      publishable.push(p.id);
+    }
+
+    const now = new Date();
+    const result = await prisma.position.updateMany({
+      where: { id: { in: publishable } },
+      data: { status: "PUBLISHED", reviewedBy: who, reviewedAt: now, publishedAt: now },
+    });
+
+    return { ok: true, published: result.count, refused, requested: body.ids.length };
+  });
+
   app.post("/positions/:id/reject", async (req, reply) => {
     const { id } = req.params as { id: string };
     const who = reviewer(req);
@@ -442,6 +488,116 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
 
     return { ok: true, keptId: keep.id, absorbed: merge.fullName, ...merged };
+  });
+
+  /**
+   * A review queue grouped by race, plus a sample.
+   *
+   * Reviewing 8,000 positions one at a time is not a workflow, and a reviewer who
+   * clicks publish 8,000 times is not reviewing. Two things make it tractable:
+   *
+   * Grouping by race, because that is the unit a person can actually hold in their
+   * head — every candidate for one seat, side by side, is where a wrong stance
+   * stands out against its neighbours.
+   *
+   * Sampling, because the decision worth making is about the BATCH. A reviewer reads
+   * a random sample, and the error rate in that sample is what says whether the rest
+   * publishes. `sample` is drawn deterministically from the position id so the same
+   * request returns the same rows — a sample that reshuffles on refresh lets a
+   * reviewer keep drawing until they like the answer.
+   */
+  app.get("/review/races", async (req) => {
+    const q = z
+      .object({
+        election: z.string().optional(),
+        sample: z.coerce.number().min(1).max(50).default(5),
+      })
+      .parse(req.query ?? {});
+
+    const races = await prisma.race.findMany({
+      where: q.election ? { election: { slug: q.election } } : {},
+      include: {
+        office: { include: { district: true } },
+        election: { select: { slug: true, name: true } },
+        candidacies: {
+          where: { isCertified: true },
+          include: {
+            candidate: {
+              select: {
+                id: true,
+                slug: true,
+                fullName: true,
+                websiteUrl: true,
+                _count: { select: { sources: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const out = [];
+    for (const race of races) {
+      const ids = race.candidacies.map((c) => c.candidate.id);
+      if (ids.length === 0) continue;
+
+      const [pending, published, noSource] = await Promise.all([
+        prisma.position.count({
+          where: { candidateId: { in: ids }, status: "IN_REVIEW", NOT: { propositionId: null } },
+        }),
+        prisma.position.count({ where: { candidateId: { in: ids }, status: "PUBLISHED" } }),
+        Promise.resolve(race.candidacies.filter((c) => c.candidate._count.sources === 0).length),
+      ]);
+      if (pending === 0 && published === 0) continue;
+
+      const waiting = await prisma.position.findMany({
+        where: { candidateId: { in: ids }, status: "IN_REVIEW", NOT: { propositionId: null } },
+        include: {
+          candidate: { select: { fullName: true } },
+          proposition: { select: { text: true } },
+          issue: { select: { slug: true } },
+          evidence: { include: { source: { select: { url: true, capturedAt: true } } } },
+        },
+        orderBy: { id: "asc" },
+      });
+
+      // Deterministic: same request, same sample. A reshuffling sample lets a
+      // reviewer redraw until the batch looks good.
+      const step = Math.max(1, Math.floor(waiting.length / q.sample));
+      const sample = waiting.filter((_, i) => i % step === 0).slice(0, q.sample);
+
+      out.push({
+        raceId: race.id,
+        election: race.election.slug,
+        office: race.office.title,
+        seat: race.office.seatLabel ?? race.office.district?.name ?? null,
+        certifiedCandidates: race.candidacies.length,
+        candidatesWithNoSource: noSource,
+        pending,
+        published,
+        sample: sample.map((p) => ({
+          id: p.id,
+          candidate: p.candidate?.fullName ?? null,
+          issue: p.issue.slug,
+          question: p.proposition?.text ?? null,
+          stance: p.stance,
+          summary: p.summary,
+          quote: p.evidence[0]?.quote ?? null,
+          sourceUrl: p.evidence[0]?.source.url ?? null,
+        })),
+        /** Every id in the batch, so a reviewer who accepts the sample can publish it. */
+        batchIds: waiting.map((p) => p.id),
+      });
+    }
+
+    return {
+      races: out.sort((a, b) => b.pending - a.pending),
+      totals: {
+        races: out.length,
+        pending: out.reduce((n, r) => n + r.pending, 0),
+        published: out.reduce((n, r) => n + r.published, 0),
+      },
+    };
   });
 
   app.get("/runs", async () =>
