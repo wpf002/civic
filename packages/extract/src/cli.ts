@@ -26,9 +26,18 @@ program
   .option("--limit <n>", "cap sources processed", (v) => Number(v))
   .option("--model-a <id>", "first extractor model", MODEL_A)
   .option("--model-b <id>", "second, independent extractor model", MODEL_B)
+  .option("--concurrency <n>", "sources processed at once", (v) => Number(v), 6)
   .option("--dry-run", "report what would happen and write nothing")
   .action(async (o) => {
+    const started = Date.now();
     const report = await runExtraction({
+      concurrency: o.concurrency,
+      onProgress: (done, total, label) => {
+        // A run that prints nothing for an hour is indistinguishable from one that hung.
+        const mins = (Date.now() - started) / 60000;
+        const left = mins > 0 ? Math.round((total - done) / (done / mins)) : 0;
+        process.stderr.write(`  [${done}/${total}] ${left} min left · ${label}\n`);
+      },
       ...(o.source ? { sourceId: o.source } : {}),
       ...(o.candidate ? { candidateSlug: o.candidate } : {}),
       ...(o.limit ? { limit: o.limit } : {}),

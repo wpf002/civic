@@ -178,3 +178,32 @@ describe("runExtraction", () => {
     expect(await prisma.position.count({ where: { candidateId } })).toBe(0);
   });
 });
+
+describe("processing many sources", () => {
+  it("runs sources concurrently and reports progress", async () => {
+    // The sequential version took 83 minutes for 311 sources. Sources are
+    // independent — nothing one produces changes how another is read.
+    let inFlight = 0;
+    let peak = 0;
+    const slow: CompleteFn = (async () => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 20));
+      inFlight--;
+      return { model: "recorded", output: { positions: [] }, costCents: 0 };
+    }) as unknown as CompleteFn;
+
+    const seen: number[] = [];
+    const report = await runExtraction({
+      dryRun: true,
+      complete: slow,
+      concurrency: 4,
+      onProgress: (done) => seen.push(done),
+    });
+
+    if (report.sources > 1) expect(peak).toBeGreaterThan(1);
+    expect(seen.length).toBe(report.sources);
+    // Progress must be monotonic, or a "3 of 10" line means nothing.
+    expect(seen).toEqual([...seen].sort((a, b) => a - b));
+  });
+});

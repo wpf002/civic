@@ -31,6 +31,15 @@ export interface RunOptions {
   modelA?: string;
   modelB?: string;
   dryRun?: boolean;
+  /**
+   * How many sources to process at once.
+   *
+   * Was effectively 1: the two models ran in parallel with each other, but source
+   * two waited for source one. Fine at 59 sources, 83 minutes at 311.
+   */
+  concurrency?: number;
+  /** Called after each source, so a long run says where it is. */
+  onProgress?: (done: number, total: number, label: string) => void;
   /** Injectable so tests never call a model. */
   complete?: CompleteFn;
 }
@@ -105,114 +114,130 @@ export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
       });
   report.extractRunId = run?.id ?? null;
 
-  for (const source of sources) {
-    if (!source.candidateId) {
-      report.details.push({
+  // Sources are independent: each is one document, and nothing one produces changes
+  // how another is read. Processing them one at a time was costing an hour per run.
+  const queue = [...sources];
+  let done = 0;
+
+  const worker = async () => {
+    for (;;) {
+      const source = queue.shift();
+      if (!source) return;
+
+      if (!source.candidateId) {
+        report.details.push({
+          sourceUrl: source.url,
+          candidate: null,
+          agreed: [],
+          flagged: [],
+          rejected: [],
+          error: "source is not linked to a candidate; extraction needs to know whose words these are",
+        });
+        continue;
+      }
+
+      // Only issues that apply to an office this candidate is running for. Extracting a
+      // school-board candidate's housing position invents a question nobody asked.
+      const levels = new Set(
+        (
+          await prisma.candidacy.findMany({
+            where: { candidateId: source.candidateId },
+            include: { race: { include: { office: { include: { jurisdiction: true } } } } },
+          })
+        ).map((c) => c.race.office.jurisdiction.level),
+      );
+      const applicable = issues.filter(
+        (i) => i.levels.some((l) => levels.has(l)) && i.propositions.length > 0,
+      );
+      const issueSlugs = applicable.map((i) => i.slug);
+      if (issueSlugs.length === 0) continue;
+      const propositions = applicable.map((i) => ({
+        issueSlug: i.slug,
+        text: i.propositions[0]!.text,
+        yesMeans: i.propositions[0]!.yesMeans,
+        noMeans: i.propositions[0]!.noMeans,
+      }));
+      const propositionByIssue = new Map(applicable.map((i) => [i.slug, i.propositions[0]!.id]));
+
+      const detail: RunReport["details"][number] = {
         sourceUrl: source.url,
-        candidate: null,
+        candidate: source.candidate?.fullName ?? null,
         agreed: [],
         flagged: [],
         rejected: [],
-        error: "source is not linked to a candidate; extraction needs to know whose words these are",
-      });
-      continue;
-    }
+      };
 
-    // Only issues that apply to an office this candidate is running for. Extracting a
-    // school-board candidate's housing position invents a question nobody asked.
-    const levels = new Set(
-      (
-        await prisma.candidacy.findMany({
-          where: { candidateId: source.candidateId },
-          include: { race: { include: { office: { include: { jurisdiction: true } } } } },
-        })
-      ).map((c) => c.race.office.jurisdiction.level),
-    );
-    const applicable = issues.filter(
-      (i) => i.levels.some((l) => levels.has(l)) && i.propositions.length > 0,
-    );
-    const issueSlugs = applicable.map((i) => i.slug);
-    if (issueSlugs.length === 0) continue;
-    const propositions = applicable.map((i) => ({
-      issueSlug: i.slug,
-      text: i.propositions[0]!.text,
-      yesMeans: i.propositions[0]!.yesMeans,
-      noMeans: i.propositions[0]!.noMeans,
-    }));
-    const propositionByIssue = new Map(applicable.map((i) => [i.slug, i.propositions[0]!.id]));
+      try {
+        const input = { sourceText: source.text, issueSlugs, propositions };
+        const [a, b] = await Promise.all([
+          extractOnce(input, modelA, opts.complete),
+          extractOnce(input, modelB, opts.complete),
+        ]);
+        report.costCents += a.costCents + b.costCents;
+        report.rejectedQuotes += a.rejected.length + b.rejected.length;
+        detail.rejected = [...a.rejected, ...b.rejected].map(
+          (r) => `${r.position.issueSlug}: ${r.reason}`,
+        );
 
-    const detail: RunReport["details"][number] = {
-      sourceUrl: source.url,
-      candidate: source.candidate?.fullName ?? null,
-      agreed: [],
-      flagged: [],
-      rejected: [],
-    };
+        const { agreed, flagged } = reconcile(a, b);
+        detail.agreed = agreed.map((p) => `${p.issueSlug}=${p.stance}`);
+        detail.flagged = flagged.map((f) => `${f.issueSlug}[${f.a?.stance ?? "-"}/${f.b?.stance ?? "-"}]`);
 
-    try {
-      const input = { sourceText: source.text, issueSlugs, propositions };
-      const [a, b] = await Promise.all([
-        extractOnce(input, modelA, opts.complete),
-        extractOnce(input, modelB, opts.complete),
-      ]);
-      report.costCents += a.costCents + b.costCents;
-      report.rejectedQuotes += a.rejected.length + b.rejected.length;
-      detail.rejected = [...a.rejected, ...b.rejected].map(
-        (r) => `${r.position.issueSlug}: ${r.reason}`,
-      );
-
-      const { agreed, flagged } = reconcile(a, b);
-      detail.agreed = agreed.map((p) => `${p.issueSlug}=${p.stance}`);
-      detail.flagged = flagged.map((f) => `${f.issueSlug}[${f.a?.stance ?? "-"}/${f.b?.stance ?? "-"}]`);
-
-      if (!opts.dryRun) {
-        for (const p of agreed) {
-          const wrote = await writeDraft(
-            source,
-            p,
-            run!.id,
-            `${modelA}+${modelB}`,
-            propositionByIssue.get(p.issueSlug),
-          );
-          if (wrote) report.drafts++;
-        }
-        for (const f of flagged) {
-          await prisma.reviewTask.create({
-            data: {
-              kind: "POSITION",
-              targetId: source.id,
-              reason:
-                `Model disagreement on "${f.issueSlug}" for ${source.candidate?.fullName ?? "unknown"}: ` +
-                `${modelA} said ${f.a?.stance ?? "nothing"}, ${modelB} said ${f.b?.stance ?? "nothing"}. ` +
-                `Source: ${source.url}`,
-            },
-          });
-          report.flagged++;
-        }
-      } else {
-        report.drafts += agreed.length;
-        report.flagged += flagged.length;
-      }
-    } catch (err) {
-      if (err instanceof ModelRefusalError) {
-        report.refusals++;
-        detail.error = `declined (${err.category ?? "unspecified"})`;
         if (!opts.dryRun) {
-          await prisma.reviewTask.create({
-            data: {
-              kind: "SOURCE_FLAG",
-              targetId: source.id,
-              reason: `A model declined to process ${source.url}: ${err.message}`,
-            },
-          });
+          for (const p of agreed) {
+            const wrote = await writeDraft(
+              source,
+              p,
+              run!.id,
+              `${modelA}+${modelB}`,
+              propositionByIssue.get(p.issueSlug),
+            );
+            if (wrote) report.drafts++;
+          }
+          for (const f of flagged) {
+            await prisma.reviewTask.create({
+              data: {
+                kind: "POSITION",
+                targetId: source.id,
+                reason:
+                  `Model disagreement on "${f.issueSlug}" for ${source.candidate?.fullName ?? "unknown"}: ` +
+                  `${modelA} said ${f.a?.stance ?? "nothing"}, ${modelB} said ${f.b?.stance ?? "nothing"}. ` +
+                  `Source: ${source.url}`,
+              },
+            });
+            report.flagged++;
+          }
+        } else {
+          report.drafts += agreed.length;
+          report.flagged += flagged.length;
         }
-      } else {
-        detail.error = err instanceof Error ? err.message : String(err);
+      } catch (err) {
+        if (err instanceof ModelRefusalError) {
+          report.refusals++;
+          detail.error = `declined (${err.category ?? "unspecified"})`;
+          if (!opts.dryRun) {
+            await prisma.reviewTask.create({
+              data: {
+                kind: "SOURCE_FLAG",
+                targetId: source.id,
+                reason: `A model declined to process ${source.url}: ${err.message}`,
+              },
+            });
+          }
+        } else {
+          detail.error = err instanceof Error ? err.message : String(err);
+        }
       }
-    }
 
-    report.details.push(detail);
-  }
+      report.details.push(detail);
+      done++;
+      opts.onProgress?.(done, sources.length, source.candidate?.fullName ?? source.url);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(opts.concurrency ?? 6, sources.length) }, worker),
+  );
 
   if (run) {
     await prisma.extractRun.update({
