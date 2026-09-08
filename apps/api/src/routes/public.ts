@@ -69,7 +69,12 @@ function shapePosition<T extends { evidence: EvidenceRow[] }>(p: T) {
 }
 
 export const publicRoutes: FastifyPluginAsync = async (app) => {
-  app.get("/issues", async () => prisma.issue.findMany({ orderBy: { sortOrder: "asc" } }));
+  app.get("/issues", async () =>
+    prisma.issue.findMany({
+      orderBy: { sortOrder: "asc" },
+      include: { propositions: { where: { isCurrent: true }, take: 1 } },
+    }),
+  );
 
   /**
    * Address → the races a person can actually vote in.
@@ -253,7 +258,10 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     });
 
     const levels = new Set(election.races.map((r) => r.office.jurisdiction.level));
-    const issues = await prisma.issue.findMany({ orderBy: { sortOrder: "asc" } });
+    const issues = await prisma.issue.findMany({
+      orderBy: { sortOrder: "asc" },
+      include: { propositions: { where: { isCurrent: true }, take: 1 } },
+    });
 
     const byIssue = new Map<string, { stances: string[]; candidates: Set<string> }>();
     for (const p of positions) {
@@ -280,10 +288,16 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
           const e = byIssue.get(i.slug);
           const stances = e?.stances ?? [];
           const silent = stances.filter((s) => (SILENT as readonly string[]).includes(s));
+          const prop = i.propositions[0];
           return {
             slug: i.slug,
             name: i.name,
             description: i.description,
+            // The actual yes/no question. A stance is an answer to this sentence and
+            // is meaningless without it on screen.
+            proposition: prop?.text ?? null,
+            yesMeans: prop?.yesMeans ?? null,
+            noMeans: prop?.noMeans ?? null,
             candidates: e?.candidates.size ?? 0,
             stated: stances.length - silent.length,
             silent: silent.length,
@@ -299,7 +313,13 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     const { slug, issueSlug } = req.params as { slug: string; issueSlug: string };
     const [election, issue] = await Promise.all([
       prisma.election.findUnique({ where: { slug } }),
-      prisma.issue.findUnique({ where: { slug: issueSlug } }),
+      prisma.issue.findUnique({
+        where: { slug: issueSlug },
+        // The proposition is the question a stance answers. A page that shows the
+        // topic description instead leaves a voter reading "SUPPORT" with no idea
+        // what was supported — which is the ambiguity the propositions exist to end.
+        include: { propositions: { where: { isCurrent: true }, take: 1 } },
+      }),
     ]);
     if (!election || !issue) return reply.code(404).send({ error: "not found" });
 
@@ -333,7 +353,18 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
 
     return {
       election: { slug: election.slug, name: election.name, electionDate: election.electionDate },
-      issue,
+      // Flattened: a client should not have to know that propositions are versioned
+      // to render the question. The current one is the only one that matters here.
+      issue: {
+        slug: issue.slug,
+        name: issue.name,
+        description: issue.description,
+        sortOrder: issue.sortOrder,
+        levels: issue.levels,
+        proposition: issue.propositions[0]?.text ?? null,
+        yesMeans: issue.propositions[0]?.yesMeans ?? null,
+        noMeans: issue.propositions[0]?.noMeans ?? null,
+      },
       appliesToThisBallot: applies,
       races: [
         ...new Map(

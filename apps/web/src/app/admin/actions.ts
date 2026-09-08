@@ -54,3 +54,38 @@ export async function decidePosition(formData: FormData) {
   if (!r.ok) redirect(`/admin?error=${encodeURIComponent(r.error)}`);
   redirect("/admin");
 }
+
+/**
+ * Publish a whole race's verified positions after reading a sample.
+ *
+ * The decision this makes is about the BATCH, not about each row: a reviewer reads a
+ * handful drawn deterministically from the race, and if those hold up the rest go
+ * with them. That is the only way 8,000 positions get reviewed by a person at all,
+ * and it is honest as long as the sample is real and the batch size is on screen —
+ * both of which the review page shows.
+ */
+export async function publishRace(formData: FormData) {
+  const reviewer = String(formData.get("reviewer") ?? "").trim();
+  const ids = String(formData.get("ids") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!reviewer || ids.length === 0) {
+    redirect(`/admin/review?error=${encodeURIComponent("a reviewer name and a batch are required")}`);
+  }
+
+  const r = await adminFetch<{ published: number; refused: Array<{ why: string }> }>(
+    "/positions/publish-batch",
+    { method: "POST", reviewer, body: JSON.stringify({ ids }) },
+  );
+  revalidatePath("/admin/review");
+  if (!r.ok) redirect(`/admin/review?error=${encodeURIComponent(r.error)}`);
+
+  // A partial publish is reported, not hidden. Refusals here mean rows that could
+  // not go live, and a reviewer who thinks they published a race that they did not
+  // will never look at it again.
+  const refused = r.data.refused.length;
+  redirect(
+    `/admin/review?published=${r.data.published}${refused ? `&refused=${refused}` : ""}`,
+  );
+}

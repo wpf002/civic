@@ -25,6 +25,9 @@ export type IssueRow = {
   slug: string;
   name: string;
   description: string;
+  proposition?: string | null;
+  yesMeans?: string | null;
+  noMeans?: string | null;
   candidates: number;
   stated: number;
   silent: number;
@@ -59,7 +62,14 @@ export type IssueCandidate = {
 
 export type IssueComparison = {
   election: { slug: string; name: string; electionDate: string };
-  issue: { slug: string; name: string; description: string };
+  issue: {
+    slug: string;
+    name: string;
+    description: string;
+    proposition?: string | null;
+    yesMeans?: string | null;
+    noMeans?: string | null;
+  };
   appliesToThisBallot: boolean;
   races: Array<{
     id: string;

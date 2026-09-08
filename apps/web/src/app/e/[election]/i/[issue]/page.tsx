@@ -56,7 +56,33 @@ export default async function IssuePage({
           title={data.issue.name}
           meta={
             <>
-              <p className="max-w-measure text-base text-ink-2">{data.issue.description}</p>
+              {data.issue.proposition ? (
+                <>
+                  {/*
+                    The question is the page. Every stance below is an answer to this
+                    exact sentence, and both readings are shown so neither is the
+                    implied correct one.
+                  */}
+                  <p className="max-w-measure font-serif text-quote text-ink">
+                    {data.issue.proposition}
+                  </p>
+                  <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <div className="border-l-[3px] border-rule-strong pl-3">
+                      <dt className="mono">Agreeing means</dt>
+                      <dd className="text-base text-ink-2">{data.issue.yesMeans}</dd>
+                    </div>
+                    <div className="border-l-[3px] border-rule-strong pl-3">
+                      <dt className="mono">Disagreeing means</dt>
+                      <dd className="text-base text-ink-2">{data.issue.noMeans}</dd>
+                    </div>
+                  </dl>
+                  <p className="mono mt-3 !normal-case !tracking-normal max-w-measure">
+                    {data.issue.description}
+                  </p>
+                </>
+              ) : (
+                <p className="max-w-measure text-base text-ink-2">{data.issue.description}</p>
+              )}
               <p className="mono mt-3">
                 {sourcesRead} sources read
                 {lastChecked ? ` · Last checked ${fmtDate(lastChecked)}` : ""}

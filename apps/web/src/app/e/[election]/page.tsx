@@ -64,7 +64,14 @@ export default async function ElectionPage({ params }: { params: Promise<{ elect
                       ›
                     </span>
                   </div>
-                  <p className="mt-2 max-w-measure text-caption text-ink-2">{i.description}</p>
+                  {/*
+                    The question, not the topic description. A stance is an answer to
+                    this sentence, and a list of topics tells a voter nothing about
+                    what "supports" would mean.
+                  */}
+                  <p className="mt-2 max-w-measure text-caption text-ink-2">
+                    {i.proposition ?? i.description}
+                  </p>
                   <p className="mono mt-2">
                     {i.stated > 0
                       ? `${i.stated} stated · ${i.silent} no stated position`
