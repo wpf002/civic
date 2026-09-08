@@ -15,6 +15,27 @@ export async function adminToken(): Promise<string | null> {
   return (await cookies()).get(ADMIN_COOKIE)?.value ?? null;
 }
 
+/**
+ * Who is signed in, according to the API.
+ *
+ * Asked of the API rather than decoded from the cookie: the cookie holds an opaque
+ * session token by design, so the only way to know whether it is still valid — and
+ * whether the person behind it has been disabled — is to ask.
+ */
+export async function currentReviewer(): Promise<{ email: string; displayName: string } | null> {
+  const token = await adminToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${BASE}/auth/me`, {
+      cache: "no-store",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    return res.ok ? ((await res.json()) as { email: string; displayName: string }) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function adminFetch<T>(
   path: string,
   init?: RequestInit & { reviewer?: string },

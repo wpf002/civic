@@ -5,6 +5,37 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ADMIN_COOKIE, adminFetch } from "@/lib/admin";
 
+/**
+ * Sign in as a reviewer.
+ *
+ * The password is exchanged for an opaque session token, and only the token is put
+ * in the cookie. The password never reaches a cookie, a log line, or a URL.
+ */
+export async function signInReviewer(formData: FormData) {
+  const email = String(formData.get("email") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
+  const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+
+  const res = await fetch(`${base}/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    redirect(`/admin?error=${encodeURIComponent("email or password is not correct")}`);
+  }
+  const { token } = (await res.json()) as { token: string };
+  (await cookies()).set(ADMIN_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 7 * 86400,
+  });
+  redirect("/admin");
+}
+
 export async function signIn(formData: FormData) {
   const token = String(formData.get("token") ?? "");
   (await cookies()).set(ADMIN_COOKIE, token, {
@@ -18,6 +49,16 @@ export async function signIn(formData: FormData) {
 }
 
 export async function signOut() {
+  // Revoke server-side as well as clearing the cookie. Deleting a cookie only stops
+  // this browser from sending a token that is still live everywhere else.
+  const token = (await cookies()).get(ADMIN_COOKIE)?.value;
+  if (token) {
+    const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+    await fetch(`${base}/auth/logout`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    }).catch(() => {});
+  }
   (await cookies()).delete(ADMIN_COOKIE);
   revalidatePath("/admin");
 }

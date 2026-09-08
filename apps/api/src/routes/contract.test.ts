@@ -1,3 +1,4 @@
+import { prisma } from "@civic/db";
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import { publicRoutes } from "./public.js";
@@ -196,7 +197,7 @@ describe("the quiz asks the same questions the positions answer", () => {
       where: { isCurrent: true },
       select: { text: true, issue: { select: { slug: true } } },
     });
-    const byText = new Map(live.map((p) => [p.text, p.issue.slug]));
+    const byText = new Map(live.map((p: { text: string; issue: { slug: string } }) => [p.text, p.issue.slug]));
     for (const q of body.questions as Array<{ prompt: string; issueSlug: string }>) {
       expect(byText.get(q.prompt)).toBe(q.issueSlug);
     }

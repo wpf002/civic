@@ -194,6 +194,9 @@ importers:
       dotenv-cli:
         specifier: ^7.4.2
         version: 7.4.4
+      playwright:
+        specifier: ^1.49.0
+        version: 1.62.1
       tsx:
         specifier: ^4.19.1
         version: 4.23.13

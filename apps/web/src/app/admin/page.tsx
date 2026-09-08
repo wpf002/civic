@@ -1,8 +1,9 @@
+import Link from "next/link";
 import { adminFetch, adminToken } from "@/lib/admin";
 import { fmtDate } from "@/components/evidence";
 import { StanceLine } from "@/components/stance";
 import { Wordmark } from "@/components/record";
-import { decidePosition, decideRoster, signIn, signOut } from "./actions";
+import { decidePosition, decideRoster, signInReviewer, signOut } from "./actions";
 import type { Stance } from "@civic/core";
 
 export const dynamic = "force-dynamic";
@@ -70,6 +71,11 @@ export default async function Admin({
       </header>
 
       <h1 className="mt-6 font-serif text-display font-bold">Review queue</h1>
+      <p className="mono mt-1">
+        <Link href="/admin/review" className="underline decoration-rule-strong underline-offset-4">
+          Review by race →
+        </Link>
+      </p>
       <p className="mono mt-2">
         {q.counts.quarantinedDiffs} roster changes held · {q.counts.draftPositions} draft positions
       </p>
@@ -261,22 +267,34 @@ function SignIn({ error }: { error?: string }) {
       <main className="pt-10">
         <h1 className="font-serif text-display font-bold">Review</h1>
         <p className="mt-3 max-w-measure text-base text-ink-2">
-          Shared-secret access. This is not real authentication and has to be replaced before the
-          pilot.
+          Sign in with your reviewer account. Everything you publish is recorded under your name, not
+          under a name typed into a form.
         </p>
         {error ? <p className="mono mt-4 !text-ink">{error}</p> : null}
-        <form action={signIn} className="mt-6">
-          <label htmlFor="token" className="mono">
-            Admin token
+        <form action={signInReviewer} className="mt-6">
+          <label htmlFor="email" className="mono">
+            Email
           </label>
           <input
-            id="token"
-            name="token"
-            type="password"
-            autoComplete="off"
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="username"
+            required
             className="mt-2 h-12 w-full rounded-[2px] border border-rule-strong bg-surface px-3"
           />
-          <button className="btn btn-primary mt-4 w-full">Continue</button>
+          <label htmlFor="password" className="mono mt-4 block">
+            Password
+          </label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            required
+            className="mt-2 h-12 w-full rounded-[2px] border border-rule-strong bg-surface px-3"
+          />
+          <button className="btn btn-primary mt-4 w-full">Sign in</button>
         </form>
       </main>
     </div>

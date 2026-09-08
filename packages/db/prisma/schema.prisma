@@ -582,6 +582,46 @@ enum ReviewTaskKind {
   SOURCE_FLAG
 }
 
+/// A person who may review and publish.
+///
+/// Replaces a single shared secret. The problems with one secret are not theoretical:
+/// every action is attributed to whoever typed a name into a form, revoking access
+/// for one person means changing it for everyone, and there is no way to tell two
+/// reviewers apart in the audit trail of a published claim about a candidate.
+///
+/// Passwords are stored as a scrypt hash with a per-user salt, never reversibly.
+/// This is not an accounts system for the public — CLAUDE.md forbids that until
+/// Phase 6 — it is staff access to the review console.
+model Reviewer {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  displayName  String
+  passwordHash String
+  salt         String
+  /// A disabled reviewer keeps their history. Nothing they published is unmade.
+  disabledAt   DateTime?
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  sessions     ReviewerSession[]
+}
+
+/// A login session. Held server-side so revoking one takes effect immediately,
+/// which a signed cookie carrying its own claims cannot do.
+model ReviewerSession {
+  id         String    @id @default(cuid())
+  /// SHA-256 of the token. The token itself is never stored, so a database read
+  /// does not hand someone a live session.
+  tokenHash  String    @unique
+  reviewerId String
+  reviewer   Reviewer  @relation(fields: [reviewerId], references: [id])
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  userAgent  String?
+
+  @@index([reviewerId, expiresAt])
+}
+
 model ReviewTask {
   id         String         @id @default(cuid())
   kind       ReviewTaskKind

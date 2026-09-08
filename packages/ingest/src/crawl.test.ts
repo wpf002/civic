@@ -102,3 +102,56 @@ describe("crawling", () => {
 
 // homepage + 16 probes + at most 6 links
 const POLICY_PATH_BUDGET = 23;
+
+describe("client-rendered sites", () => {
+  const shell = '<html><body><div id="root"></div><script src="/main.js"></script></body></html>';
+  const okShell = () =>
+    ({ ok: true, status: 200, url: "https://example.org/", text: async () => shell }) as unknown as Response;
+
+  it("does not launch a browser unless the plain fetch already failed", async () => {
+    let rendered = 0;
+    await crawlCampaignSite("https://example.org/", {
+      renderJs: true,
+      probePaths: [],
+      maxLinks: 0,
+      fetchImpl: async () =>
+        ({ ok: true, status: 200, url: "https://example.org/", text: async () => page(long("Real content. ")) }) as unknown as Response,
+      renderImpl: (async () => {
+        rendered++;
+        return { url: "x", text: "", html: "" };
+      }) as never,
+    });
+    expect(rendered).toBe(0);
+  });
+
+  it("recovers a site that only exists after JavaScript runs", async () => {
+    const r = await crawlCampaignSite("https://example.org/", {
+      renderJs: true,
+      probePaths: [],
+      maxLinks: 0,
+      fetchImpl: async () => okShell(),
+      renderImpl: (async () => ({
+        url: "https://example.org/",
+        text: long("I will vote to raise the minimum wage. "),
+        html: "",
+      })) as never,
+    });
+    expect(r.pages).toHaveLength(1);
+    expect(r.pages[0]!.text).toContain("raise the minimum wage");
+    expect(r.outcomes["rendered"]).toBe(1);
+  });
+
+  it("counts a render failure rather than pretending the page was empty", async () => {
+    const r = await crawlCampaignSite("https://example.org/", {
+      renderJs: true,
+      probePaths: [],
+      maxLinks: 0,
+      fetchImpl: async () => okShell(),
+      renderImpl: (async () => {
+        throw new Error("browser crashed");
+      }) as never,
+    });
+    expect(r.outcomes["render failed"]).toBe(1);
+    expect(r.pages).toHaveLength(0);
+  });
+});

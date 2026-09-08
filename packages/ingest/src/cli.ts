@@ -16,6 +16,7 @@ import {
   type CandidateSite,
 } from "./adapters/candidate-sites.js";
 import { NOVEMBER_2026, fetchCertifiedRoster } from "./adapters/tx-sos.js";
+import { parseQuestionnaire } from "./adapters/questionnaire.js";
 import { billKey, fetchMemberVotes, fetchRollCalls, rollCallUrl } from "./adapters/congress-votes.js";
 import { resolveCouncilSeat, resolveFederalSeat } from "./seats.js";
 import { proposePairsInRace } from "@civic/core";
@@ -327,6 +328,7 @@ program
   .option("--certified-only", "only candidates on the certified ballot")
   .option("--concurrency <n>", "parallel sites", (v) => Number(v), 4)
   .option("--home-only", "fetch only the homepage (the old behaviour)")
+  .option("--render-js", "re-fetch client-rendered sites with a browser (slow, few sites)")
   .action(async (o) => {
     const candidates = await prisma.candidate.findMany({
       where: {
@@ -348,6 +350,7 @@ program
         if (!c) return;
         const r = await crawlCampaignSite(c.websiteUrl!, {
           ...(o.homeOnly ? { probePaths: [], maxLinks: 0 } : {}),
+          ...(o.renderJs ? { renderJs: true } : {}),
         });
         for (const [k, v] of Object.entries(r.outcomes)) outcomes[k] = (outcomes[k] ?? 0) + v;
 
@@ -461,6 +464,91 @@ program
       "No vote has been interpreted. A vote becomes a position only when a reviewer " +
         "decides what a Yea on that bill means for a proposition — one decision per bill.",
     );
+    await prisma.$disconnect();
+  });
+
+program
+  .command("questionnaire")
+  .description("Load candidate questionnaire answers from a CSV. No extraction — the candidate answered.")
+  .requiredOption("--file <path>")
+  .requiredOption("--election <slug>")
+  .option("--dry-run")
+  .action(async (o) => {
+    const { readFileSync } = await import("node:fs");
+    const { answers, rejected } = parseQuestionnaire(readFileSync(o.file, "utf8"));
+    console.log(`${answers.length} answers, ${rejected.length} rows refused`);
+    for (const r of rejected.slice(0, 15)) console.log(`  ! line ${r.row}: ${r.why}`);
+
+    let written = 0;
+    const problems: string[] = [];
+
+    for (const a of answers) {
+      const candidate = await prisma.candidate.findUnique({ where: { slug: a.candidateSlug } });
+      if (!candidate) { problems.push(`${a.candidateSlug}: no such candidate`); continue; }
+      const issue = await prisma.issue.findUnique({
+        where: { slug: a.issueSlug },
+        include: { propositions: { where: { isCurrent: true }, take: 1 } },
+      });
+      if (!issue) { problems.push(`${a.issueSlug}: no such issue`); continue; }
+      const proposition = issue.propositions[0];
+      if (!proposition) { problems.push(`${a.issueSlug}: no current proposition`); continue; }
+
+      // Never overwrite a published row. A correction supersedes, decided by a person.
+      const published = await prisma.position.findFirst({
+        where: { candidateId: candidate.id, issueId: issue.id, status: "PUBLISHED" },
+      });
+      if (published) { problems.push(`${a.candidateSlug}/${a.issueSlug}: already published — needs a supersede`); continue; }
+      if (o.dryRun) { written++; continue; }
+
+      const { createHash } = await import("node:crypto");
+      const contentHash = createHash("sha256").update(a.quote || a.sourceUrl).digest("hex");
+      const source = await prisma.source.upsert({
+        where: { url_contentHash: { url: a.sourceUrl, contentHash } },
+        update: { candidateId: candidate.id },
+        create: {
+          kind: "QUESTIONNAIRE",
+          tier: "QUESTIONNAIRE",
+          url: a.sourceUrl,
+          title: a.sourceTitle,
+          publisher: a.publisher,
+          capturedAt: new Date(),
+          contentHash,
+          // The answer itself is the document. findVerbatim then matches trivially,
+          // which is correct: the quote IS the source here, not a span cut from one.
+          text: a.quote,
+          candidateId: candidate.id,
+          ...(a.answeredAt ? { publishedAt: new Date(a.answeredAt) } : {}),
+        },
+      });
+
+      const isAbsence = a.stance === "NO_STATED_POSITION" || a.stance === "DECLINED_TO_STATE";
+      const evidence = isAbsence
+        ? undefined
+        : await prisma.evidence.create({
+            data: { sourceId: source.id, quote: a.quote, startOffset: 0, endOffset: a.quote.length },
+          });
+
+      await prisma.position.create({
+        data: {
+          candidateId: candidate.id,
+          issueId: issue.id,
+          propositionId: proposition.id,
+          stance: a.stance,
+          summary: a.quote.slice(0, 280) || "The candidate did not answer this question.",
+          confidence: 1,
+          // IN_REVIEW, not DRAFT: there is nothing for the extractor's verifier to
+          // check, because no model read anything. A person still publishes it.
+          status: "IN_REVIEW",
+          extractedBy: "questionnaire",
+          ...(evidence ? { evidence: { connect: { id: evidence.id } } } : {}),
+        },
+      });
+      written++;
+    }
+
+    console.log(`\n${written} loaded${o.dryRun ? " (dry run)" : ""}, ${problems.length} could not be`);
+    for (const p of problems.slice(0, 15)) console.log(`  ! ${p}`);
+    console.log("Loaded as IN_REVIEW. A person still publishes them.");
     await prisma.$disconnect();
   });
 

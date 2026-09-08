@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma, type Prisma } from "@civic/db";
+import { reviewerFromToken, type AuthedReviewer } from "../auth.js";
 
 /**
  * Review console backend.
@@ -15,16 +16,46 @@ import { prisma, type Prisma } from "@civic/db";
  * that removes a candidate without one.
  */
 export const adminRoutes: FastifyPluginAsync = async (app) => {
+  /**
+   * Two ways in, and they are not equal.
+   *
+   * A reviewer session identifies a person: the audit trail on a published position
+   * records who they actually are, revoking their access takes effect on the next
+   * request, and two reviewers are distinguishable.
+   *
+   * The shared ADMIN_TOKEN remains for scripted runs only, and every one of them has
+   * to name a reviewer in a header. It is strictly weaker — the name is a text field
+   * nobody verified — and it is refused entirely once ALLOW_SHARED_ADMIN_TOKEN is
+   * turned off, which is what a real deployment does.
+   */
   app.addHook("onRequest", async (req, reply) => {
-    const expected = process.env.ADMIN_TOKEN;
-    if (!expected || expected === "change-me") {
-      return reply.code(503).send({ error: "ADMIN_TOKEN is not configured" });
+    const bearer = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
+
+    const session = await reviewerFromToken(bearer || undefined);
+    if (session) {
+      (req as { authedReviewer?: AuthedReviewer }).authedReviewer = session;
+      return;
     }
-    if (req.headers.authorization !== `Bearer ${expected}`) return reply.code(401).send();
+
+    const shared = process.env.ADMIN_TOKEN;
+    const sharedAllowed = process.env.ALLOW_SHARED_ADMIN_TOKEN !== "false";
+    if (!sharedAllowed) return reply.code(401).send({ error: "sign in as a reviewer" });
+    if (!shared || shared === "change-me") {
+      return reply.code(503).send({ error: "no reviewer session and ADMIN_TOKEN is not configured" });
+    }
+    if (bearer !== shared) return reply.code(401).send();
   });
 
-  const reviewer = (req: { headers: Record<string, unknown> }) =>
-    (req.headers["x-reviewer"] as string | undefined)?.trim() || null;
+  /**
+   * Who is accountable for this action.
+   *
+   * A verified session wins over the x-reviewer header every time. Letting a header
+   * override a real identity would make the audit trail forgeable by the one caller
+   * we can actually identify.
+   */
+  const reviewer = (req: { headers: Record<string, unknown>; authedReviewer?: AuthedReviewer }) =>
+    req.authedReviewer?.displayName ??
+    ((req.headers["x-reviewer"] as string | undefined)?.trim() || null);
 
   // ---------------------------------------------------------------- queue
 

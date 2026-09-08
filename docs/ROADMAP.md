@@ -29,7 +29,9 @@ Last revised 2026-09-08.
 | Support : oppose | 1.5 : 1 (was 19.7 : 1 before propositions) |
 | States with a roster adapter | 5 — TX, NC, MN, ME, CO |
 | Roll-call votes recorded | 3,936 across 164 bills |
-| Tests | 281 |
+| Jurisdictions available as a spine | 56,000+ via OCD division ids |
+| Admin access | reviewer accounts, scrypt + server-side sessions |
+| Tests | 314 |
 
 Working end to end and live: certified ballot → candidate websites → crawled policy pages →
 archived sources → two-model extraction against propositions → adversarial verification →
@@ -76,8 +78,8 @@ Texas, November 3 2026. Federal races only. The point is to publish something tr
 - [x] Propositions — one neutral yes/no question per issue
 - [x] Re-extract against propositions and measure the support/oppose ratio
 - [x] Crawl `/issues`, `/platform`, `/priorities` rather than the homepage alone
-- [ ] Render JavaScript-only sites. 3 candidates archive as 0, 41 and 48 characters of navigation
-      chrome. Needs a headless browser in the ingest path.
+- [x] Render JavaScript-only sites. A Playwright fallback, used only when a plain fetch returns an
+      app shell — 17 pages recovered that would otherwise have read as candidates who said nothing.
 - [x] Publish the surviving positions
 - [x] The web app shows a real Texas race with real quotes
 
@@ -109,10 +111,15 @@ candidate is speaking:
       commemorative. The apparatus is built and correct; a wider window of votes, or votes on a
       cycle with more floor activity on these questions, may yield more. Do not plan coverage
       around it.
-- [ ] **Candidate questionnaires.** Vote411 / League of Women Voters, Vote Smart. The candidate
-      answers a fixed question, which is exactly the proposition shape.
+- [x] **Candidate questionnaires.** Neither source is programmatically available: Vote411's ballot
+      tool is a client-side app with obfuscated keys and no public API, and Vote Smart's documented
+      endpoints return 404 (both checked Sept 2026). Scraping Vote411 would also mean taking the
+      League's editorial work. Built as a strict CSV instead — the path CLAUDE.md already blesses —
+      so answers from a partnership feed, a newspaper questionnaire or a candidate's emailed reply
+      load without extraction, because the candidate answered.
 - [x] **Deeper site crawling.** Policy content is usually one link off the homepage.
-- [ ] **Debate and forum transcripts** where they exist.
+- [x] **Debate and forum transcripts** — same CSV path, for the same reason. A transcript quote is
+      a candidate answering a question; there is no national source and no extraction step needed.
 
 Explicitly not a source: campaign finance. Who funds a candidate is not a statement of what they
 would do, and treating it as one is the kind of inference this product exists to avoid.
@@ -127,7 +134,10 @@ and incumbents have positions drawn from their votes rather than their marketing
 A user types an address and gets their races. Without this the data is not reachable by a voter.
 
 - [x] Census geocoder → state, county, congressional district, state legislative districts
-- [ ] `openstates/jurisdictions` for OCD division IDs covering every municipality and school district
+- [x] OCD division IDs — the Open Civic Data list: 36,138 municipalities, 17,235 school districts,
+      3,057 counties. Public domain, one CSV, no key. It is the SPINE, not coverage: a jurisdiction
+      imported from it has no races until an adapter finds some, and the ballot endpoint reports it
+      as not covered.
 - [x] Wire the existing district resolver to the home page
 - [x] Show the coverage ceiling honestly: "we have your congressional race; we do not yet have your
       city council race"
@@ -178,7 +188,9 @@ adding people.
 - [x] Spot-check sampling: a reviewer reads a deterministic sample and publishes the race if it
       holds up. Deterministic on purpose — a reshuffling sample lets a reviewer redraw until a
       batch looks good.
-- [ ] Real authentication before a second reviewer exists
+- [x] Real authentication. Reviewer accounts with scrypt password hashes and server-side sessions,
+      replacing the shared secret. A verified session always beats the x-reviewer header, so the
+      audit trail on a published claim cannot be forged by the one caller we can identify.
 
 **Done when:** publishing a race's positions takes minutes, and the error rate of published positions
 is measured rather than assumed.

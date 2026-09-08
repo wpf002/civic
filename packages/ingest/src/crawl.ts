@@ -14,6 +14,7 @@
  * the issues page, not to mirror the site.
  */
 import { htmlToText } from "./html-text.js";
+import { looksClientRendered, renderPage } from "./render.js";
 
 /** Conventional paths, most common first. */
 export const POLICY_PATHS = [
@@ -103,6 +104,15 @@ export async function crawlCampaignSite(
     maxPages?: number;
     maxLinks?: number;
     probePaths?: string[];
+    /**
+     * Re-fetch with a browser when a plain fetch returns an app shell.
+     *
+     * Off by default: a browser is twenty times the cost and time, and only a
+     * handful of sites need one. On, it is still only used when the plain fetch
+     * already failed to produce a document.
+     */
+    renderJs?: boolean;
+    renderImpl?: typeof renderPage;
   } = {},
 ): Promise<CrawlResult> {
   const fetchImpl = opts.fetchImpl ?? fetch;
@@ -129,13 +139,31 @@ export async function crawlCampaignSite(
         return null;
       }
       const html = await res.text();
-      const text = htmlToText(html);
+      let text = htmlToText(html);
+      let landedOn = res.url;
+
+      // The slow path, and only after the fast one produced nothing quotable. Three
+      // Texas candidates archived as a navigation bar because their sites render
+      // client-side, and storing that would have read as candidates who said nothing.
+      if (opts.renderJs && looksClientRendered(html, text, MIN_TEXT)) {
+        try {
+          const rendered = await (opts.renderImpl ?? renderPage)(url);
+          if (rendered.text.length > text.length) {
+            text = rendered.text;
+            landedOn = rendered.url;
+            outcomes["rendered"] = (outcomes["rendered"] ?? 0) + 1;
+          }
+        } catch {
+          outcomes["render failed"] = (outcomes["render failed"] ?? 0) + 1;
+        }
+      }
+
       if (text.length < MIN_TEXT) {
         outcomes["too thin"] = (outcomes["too thin"] ?? 0) + 1;
         return html;
       }
       if (via === "home") homeText = text;
-      pages.push({ url: res.url, text, chars: text.length, via });
+      pages.push({ url: landedOn, text, chars: text.length, via });
       return html;
     } catch {
       outcomes["fetch error"] = (outcomes["fetch error"] ?? 0) + 1;
