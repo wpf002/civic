@@ -15,6 +15,7 @@ import {
   type LabelSet,
 } from "./phase0.js";
 import { VERIFY_MODEL, directionRatio, runVerification } from "./verify.js";
+import { proposeMappings, type BillInput } from "./bills.js";
 
 const program = new Command("civic-extract");
 
@@ -58,6 +59,75 @@ program
       `\n${report.sources} sources · ${report.drafts} drafts · ${report.flagged} to review · ` +
         `${report.rejectedQuotes} quotes dropped · ${report.refusals} refusals · ` +
         `${report.costCents.toFixed(2)}c` + (o.dryRun ? "  (dry run, nothing written)" : ""),
+    );
+    await prisma.$disconnect();
+  });
+
+program
+  .command("map-bills")
+  .description("Decide what a vote on each bill means for each proposition. One judgment per bill.")
+  .option("--limit <n>", "bills to classify", (v) => Number(v))
+  .option("--dry-run")
+  .action(async (o) => {
+    const bills = await prisma.voteRecord.groupBy({ by: ["billId"] });
+    const propositions = await prisma.proposition.findMany({
+      where: { isCurrent: true },
+      include: { issue: { select: { slug: true } } },
+    });
+
+    // Skip bills already decided. A confirmed mapping is not re-litigated by a model.
+    const done = new Set(
+      (await prisma.billProposition.findMany({ select: { billId: true } })).map((b) => b.billId),
+    );
+    const todo = bills.map((b) => b.billId).filter((id) => !done.has(id)).slice(0, o.limit ?? 100);
+    console.log(`${todo.length} bills to classify against ${propositions.length} propositions`);
+    if (todo.length === 0) { await prisma.$disconnect(); return; }
+
+    // The official CRS summary, never the title. Titles are written to persuade —
+    // "Make the District of Columbia Safe and Beautiful Act" says nothing about what
+    // the bill does — and reading them would launder a sponsor's framing into a
+    // candidate's record.
+    const key = process.env.CONGRESS_GOV_API_KEY;
+    if (!key) throw new Error("CONGRESS_GOV_API_KEY is not set.");
+    const fetched: BillInput[] = [];
+    let noSummary = 0;
+    for (const billId of todo) {
+      const m = billId.match(/^([A-Z]+)\s+(\d+)$/);
+      if (!m) continue;
+      const type = m[1]!.toLowerCase();
+      const num = m[2]!;
+      const base = `https://api.congress.gov/v3/bill/119/${type}/${num}`;
+      const [detail, summaries] = await Promise.all([
+        fetch(`${base}?api_key=${key}&format=json`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetch(`${base}/summaries?api_key=${key}&format=json`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      ]);
+      const bill = (detail as { bill?: { title?: string; policyArea?: { name?: string } } })?.bill;
+      const title = bill?.title ?? billId;
+      const policyArea = bill?.policyArea?.name ?? null;
+      const list = (summaries as { summaries?: Array<{ text?: string }> })?.summaries ?? [];
+      const text = list.at(-1)?.text ?? "";
+      const summary = text.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+      // No summary means no basis. A title alone is not enough to decide what a vote
+      // meant, and guessing from it is exactly the failure this is built to avoid.
+      if (summary.length < 80) { noSummary++; continue; }
+      fetched.push({ billId, title, summary, policyArea });
+    }
+    console.log(`${fetched.length} have an official summary, ${noSummary} do not and are skipped`);
+
+    const report = await proposeMappings(
+      fetched,
+      propositions.map((p) => ({ id: p.id, issueSlug: p.issue.slug, text: p.text, yesMeans: p.yesMeans, noMeans: p.noMeans })),
+      { dryRun: !!o.dryRun },
+    );
+
+    console.log(`\n${report.pairsChecked} bill x proposition pairs checked · ${report.proposed} mappings proposed · ${report.costCents.toFixed(2)}c`);
+    for (const d of report.details) {
+      console.log(`  ${d.billId} -> ${d.issueSlug}: a Yea means ${d.yeaMeans}`);
+      console.log(`     ${d.reasoning.slice(0, 180)}`);
+    }
+    console.log(
+      `\nAll PROPOSED. Nothing becomes a position until a person confirms it — this is ` +
+        `the one point where a recorded fact becomes an interpreted claim.`,
     );
     await prisma.$disconnect();
   });

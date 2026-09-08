@@ -392,6 +392,7 @@ model Proposition {
   createdAt DateTime   @default(now())
   retiredAt DateTime?
   positions Position[]
+  billMappings BillProposition[]
 
   @@unique([issueId, version])
   @@index([issueId, isCurrent])
@@ -509,6 +510,42 @@ model Position {
 }
 
 // Roll-call votes for incumbents. Ingested, not extracted.
+/// What a vote on one bill means for one proposition.
+///
+/// A roll call is a fact. Turning it into a position requires deciding what the bill
+/// does and which way a Yea points — and that judgment is made ONCE PER BILL, not
+/// once per member. One decision covers all 435 votes on that roll call, is reviewed
+/// once, and cannot mean different things for different candidates.
+///
+/// Most bills map to nothing. A procedural motion, an appropriation, a post office
+/// naming: those get no row here, and the members who voted on them get no position
+/// from it. An unmapped bill is the normal case, not a gap.
+model BillProposition {
+  id            String            @id @default(cuid())
+  /// "HR 5103" — the same key VoteRecord uses.
+  billId        String
+  propositionId String
+  proposition   Proposition       @relation(fields: [propositionId], references: [id])
+  /// Which way a Yea points on THIS proposition. A Nay is the opposite.
+  yeaMeans      Stance
+  /// The bill text or summary the decision was made from, quoted.
+  basis         String
+  reasoning     String
+  status        MappingStatus     @default(PROPOSED)
+  decidedBy     String?
+  decidedAt     DateTime?
+  createdAt     DateTime          @default(now())
+
+  @@unique([billId, propositionId])
+  @@index([status])
+}
+
+enum MappingStatus {
+  PROPOSED // a model read the bill and suggested this. Produces nothing yet.
+  CONFIRMED // a person agreed. Votes on this bill become positions.
+  REJECTED // the bill does not bear on this proposition, or the direction was wrong.
+}
+
 model VoteRecord {
   id          String    @id @default(cuid())
   candidateId String
