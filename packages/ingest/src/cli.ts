@@ -16,6 +16,7 @@ import {
   type CandidateSite,
 } from "./adapters/candidate-sites.js";
 import { NOVEMBER_2026, fetchCertifiedRoster } from "./adapters/tx-sos.js";
+import { billKey, fetchMemberVotes, fetchRollCalls, rollCallUrl } from "./adapters/congress-votes.js";
 import { resolveCouncilSeat, resolveFederalSeat } from "./seats.js";
 import { proposePairsInRace } from "@civic/core";
 import { createHash } from "node:crypto";
@@ -227,12 +228,17 @@ program
 
     // 2. Congress.gov, for sitting members. An official .gov site, tiered lower.
     let congressHits = 0;
+    const bioguideByName = new Map<string, string>();
     for (const m of await fetchCongressMembers(o.state, o.congress)) {
       const site = await fetchCongressMemberSite(m.bioguideId);
       if (!site) continue;
       congressHits++;
       const key = nameKey(formatFecName(m.name));
       found.set(key, preferSite(found.get(key) ?? null, site)!);
+      // The bioguide id is how a roll-call vote joins to a candidate. Recording it
+      // here rather than matching names later: two members of one delegation have
+      // shared a surname, and a vote attributed to the wrong person is unrecoverable.
+      bioguideByName.set(key, m.bioguideId);
     }
     console.log(`Congress.gov:  ${congressHits} sitting members`);
 
@@ -251,7 +257,21 @@ program
 
     let wrote = 0;
     let already = 0;
+    let bioguidesWritten = 0;
     for (const c of candidates) {
+      const bioguide = bioguideByName.get(nameKey(c.fullName));
+      if (bioguide && !(c.externalIds as { bioguide?: string } | null)?.bioguide && !o.dryRun) {
+        await prisma.candidate.update({
+          where: { id: c.id },
+          data: {
+            externalIds: {
+              ...((c.externalIds as Record<string, string> | null) ?? {}),
+              bioguide,
+            },
+          },
+        });
+        bioguidesWritten++;
+      }
       const site = found.get(nameKey(c.fullName));
       if (!site) continue;
       if (c.websiteUrl === site.url) {
@@ -278,6 +298,7 @@ program
       },
     });
 
+    if (bioguidesWritten) console.log(`recorded ${bioguidesWritten} bioguide ids for vote lookup`);
     console.log(
       `\nthis run: ${wrote} written, ${already} already current` +
         (o.dryRun ? "  (dry run, nothing written)" : ""),
@@ -369,6 +390,77 @@ program
     }
     for (const e of empty.slice(0, 12)) console.log(`  ! ${e}`);
     if (empty.length > 12) console.log(`  ... and ${empty.length - 12} more`);
+    await prisma.$disconnect();
+  });
+
+program
+  .command("votes")
+  .description("Record how sitting members voted. Facts only — no interpretation of what a vote means.")
+  .requiredOption("--election <slug>")
+  .option("--congress <n>", "Congress number", (v) => Number(v), 119)
+  .option("--session <n>", "session number", (v) => Number(v), 2)
+  .option("--limit <n>", "roll calls to pull, newest first", (v) => Number(v), 60)
+  .action(async (o) => {
+    // Only candidates we can join a vote to. The bioguide id is the join, and it
+    // comes from Congress.gov rather than from name matching — two members have
+    // shared a surname in one delegation before.
+    const candidates = await prisma.candidate.findMany({
+      where: { candidacies: { some: { race: { election: { slug: o.election } } } } },
+      select: { id: true, fullName: true, externalIds: true },
+    });
+    const byBioguide = new Map<string, { id: string; fullName: string }>();
+    for (const c of candidates) {
+      const b = (c.externalIds as { bioguide?: string } | null)?.bioguide;
+      if (b) byBioguide.set(b, { id: c.id, fullName: c.fullName });
+    }
+    if (byBioguide.size === 0) {
+      console.log(
+        "No candidate carries a bioguide id yet. Run `sites` first — it reads the " +
+          "Congress.gov member list and is where that id is recorded.",
+      );
+      await prisma.$disconnect();
+      return;
+    }
+    console.log(`${byBioguide.size} sitting members in ${o.election}`);
+
+    const rollCalls = await fetchRollCalls(o.congress, o.session, { limit: o.limit });
+    console.log(`${rollCalls.length} roll calls in Congress ${o.congress} session ${o.session}`);
+
+    let written = 0, unchanged = 0, skipped = 0;
+    for (const rc of rollCalls) {
+      const bill = billKey(rc);
+      if (!bill) { skipped++; continue; } // a procedural vote with no bill attached
+      const votes = await fetchMemberVotes(o.congress, o.session, rc.rollCallNumber);
+      for (const v of votes) {
+        const cand = byBioguide.get(v.bioguideId);
+        if (!cand) continue;
+        const existing = await prisma.voteRecord.findUnique({
+          where: { candidateId_billId: { candidateId: cand.id, billId: bill } },
+        });
+        if (existing) { unchanged++; continue; }
+        await prisma.voteRecord.create({
+          data: {
+            candidateId: cand.id,
+            body: "U.S. House",
+            billId: bill,
+            billTitle: `${bill} — roll call ${rc.rollCallNumber} (${rc.result ?? "result unrecorded"})`,
+            vote: v.voteCast.toUpperCase().replace(/\s+/g, "_"),
+            votedAt: rc.startDate ? new Date(rc.startDate) : new Date(),
+            sourceUrl: rollCallUrl(rc),
+            // Deliberately empty. Which propositions a bill bears on is decided once
+            // per bill by a reviewer, not inferred here from its number.
+            issueSlugs: [],
+          },
+        });
+        written++;
+      }
+    }
+
+    console.log(`\n${written} votes recorded, ${unchanged} already held, ${skipped} roll calls had no bill`);
+    console.log(
+      "No vote has been interpreted. A vote becomes a position only when a reviewer " +
+        "decides what a Yea on that bill means for a proposition — one decision per bill.",
+    );
     await prisma.$disconnect();
   });
 
