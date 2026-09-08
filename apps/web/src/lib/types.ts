@@ -118,6 +118,8 @@ export type QuizPayload = {
   questions: Array<{
     id: string;
     prompt: string;
+    yesMeans?: string | null;
+    noMeans?: string | null;
     issueSlug: string;
     issueName: string;
     issueDescription: string;

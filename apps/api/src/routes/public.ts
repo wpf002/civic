@@ -477,12 +477,34 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     if (!election) return reply.code(404).send({ error: "not found" });
 
     const inElection = { candidacies: { some: { race: { electionId: election.id } } } };
+
+    // Which issues this election's offices can actually act on. Asking a voter about
+    // a question none of their candidates could decide wastes the only two minutes
+    // they will give this.
+    const levels = new Set(
+      (
+        await prisma.race.findMany({
+          where: { electionId: election.id },
+          include: { office: { include: { jurisdiction: true } } },
+        })
+      ).map((r) => r.office.jurisdiction.level),
+    );
+
     const [questions, positions, candidacies] = await Promise.all([
-      prisma.quizQuestion.findMany({
-        where: { active: true },
-        orderBy: { sortOrder: "asc" },
-        include: { issue: { select: { slug: true, name: true, description: true } } },
-      }),
+      // The quiz asks the PROPOSITIONS, not the old seeded prompts. Every published
+      // position is an answer to one of these exact sentences, so matching a voter
+      // against anything else compares two different questions and calls the result
+      // agreement. That was the defect this replaces.
+      prisma.proposition
+        .findMany({
+          where: { isCurrent: true },
+          include: { issue: { select: { slug: true, name: true, description: true, sortOrder: true, levels: true } } },
+        })
+        .then((rows) =>
+          rows
+            .filter((r) => r.issue.levels.some((l) => levels.has(l)))
+            .sort((a, b) => a.issue.sortOrder - b.issue.sortOrder),
+        ),
       prisma.position.findMany({
         where: { ...PUBLISHED, candidate: inElection },
         select: {
@@ -508,7 +530,11 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
       election: { slug: election.slug, name: election.name, electionDate: election.electionDate },
       questions: questions.map((q) => ({
         id: q.id,
-        prompt: q.prompt,
+        prompt: q.text,
+        // What agreeing and disagreeing commit to, so a voter answers the same
+        // question the extractor asked rather than a paraphrase of it.
+        yesMeans: q.yesMeans,
+        noMeans: q.noMeans,
         issueSlug: q.issue.slug,
         issueName: q.issue.name,
         issueDescription: q.issue.description,

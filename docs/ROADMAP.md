@@ -189,9 +189,8 @@ is measured rather than assumed.
 
 - [x] Issue-first browse: pick a proposition, see every candidate's answer side by side
 - [x] Candidate page: every proposition, answered or honestly blank
-- [ ] Match quiz — works, but still asks the eight seeded QuizQuestion prompts rather than the
-      twenty propositions. The rest of the product now answers propositions, so the quiz is
-      matching against a different set of questions than the positions were extracted for.
+- [x] Match quiz — now asks the propositions themselves, so a voter answers the same sentence the
+      extractor did. Answers never leave the device and are never persisted.
 - [x] Share card
 - [x] Corrections log, public
 

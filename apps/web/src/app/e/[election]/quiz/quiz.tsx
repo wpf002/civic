@@ -108,9 +108,27 @@ export function Quiz({ data }: { data: QuizPayload }) {
           {q.prompt}
         </h1>
 
+        {/*
+          What each answer commits to, shown before the voter answers rather than
+          hidden behind a disclosure. Both sides get the same words and the same
+          weight, so neither reads as the intended one.
+        */}
+        {q.yesMeans && q.noMeans ? (
+          <dl className="mt-4 grid gap-2 sm:grid-cols-2">
+            <div className="border-l-[3px] border-rule-strong pl-3">
+              <dt className="mono">Agreeing means</dt>
+              <dd className="text-caption text-ink-2">{q.yesMeans}</dd>
+            </div>
+            <div className="border-l-[3px] border-rule-strong pl-3">
+              <dt className="mono">Disagreeing means</dt>
+              <dd className="text-caption text-ink-2">{q.noMeans}</dd>
+            </div>
+          </dl>
+        ) : null}
+
         <details className="mt-3">
           <summary className="mono inline-flex min-h-[44px] items-center underline decoration-rule-strong underline-offset-4">
-            What this means
+            What this issue covers
           </summary>
           <p className="mt-2 max-w-measure text-caption text-ink-2">{q.issueDescription}</p>
         </details>

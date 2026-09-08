@@ -181,3 +181,40 @@ describe("address to ballot", () => {
     expect(res.json().why).toMatch(/geocoder/i);
   }, 30000);
 });
+
+describe("the quiz asks the same questions the positions answer", () => {
+  it("serves propositions, not the old seeded prompts", async () => {
+    const res = await app.inject({ method: "GET", url: "/v1/elections/2026-11-tx/quiz" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.questions.length).toBeGreaterThan(0);
+
+    // Every question must be a live proposition. Matching a voter's answers against
+    // a different set of questions than the positions were extracted for compares
+    // two different things and calls the result agreement.
+    const live = await prisma.proposition.findMany({
+      where: { isCurrent: true },
+      select: { text: true, issue: { select: { slug: true } } },
+    });
+    const byText = new Map(live.map((p) => [p.text, p.issue.slug]));
+    for (const q of body.questions as Array<{ prompt: string; issueSlug: string }>) {
+      expect(byText.get(q.prompt)).toBe(q.issueSlug);
+    }
+  });
+
+  it("gives both readings, so neither answer is the implied one", async () => {
+    const res = await app.inject({ method: "GET", url: "/v1/elections/2026-11-tx/quiz" });
+    for (const q of res.json().questions as Array<{ yesMeans: string; noMeans: string }>) {
+      expect(q.yesMeans?.length).toBeGreaterThan(0);
+      expect(q.noMeans?.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("only asks about issues this election's offices can act on", async () => {
+    const res = await app.inject({ method: "GET", url: "/v1/elections/2026-11-tx/quiz" });
+    const slugs = (res.json().questions as Array<{ issueSlug: string }>).map((q) => q.issueSlug);
+    // Texas November 2026 is federal only in this dataset, so a purely local
+    // question has no candidate who could answer it.
+    expect(slugs).not.toContain("local-development-zoning");
+  });
+});

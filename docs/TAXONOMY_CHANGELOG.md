@@ -138,3 +138,22 @@ mouth. Any wording change needs a new entry in this file.
 
 **Consequences.** Positions extracted before this entry have no proposition and are not comparable
 with ones extracted after it. They are re-extracted rather than migrated.
+
+## 0006 — The quiz asks the propositions
+
+The match quiz asked eight seeded `QuizQuestion` prompts while every published position answered
+one of twenty propositions. A voter's answers were being scored against a different set of
+questions than the positions were extracted for, and the result was still presented as agreement.
+
+The quiz now serves the current propositions directly. The same sentence a candidate's stance was
+judged against is the sentence the voter answers, and both readings — what agreeing and what
+disagreeing commit to — are shown before the voter answers rather than hidden behind a disclosure,
+with the same words and the same weight on each side.
+
+It also filters to issues the election's offices can actually act on. Texas November 2026 is
+federal-only in this dataset, so it asks 18 of the 20 rather than asking about city zoning that no
+candidate on that ballot could decide.
+
+The seeded `QuizQuestion` rows are left in place and unused. They are not deleted here because a
+published match result computed against them is a historical claim, and removing the questions it
+was computed from would make it unauditable.
