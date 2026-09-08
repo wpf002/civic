@@ -64,6 +64,66 @@ program
   });
 
 program
+  .command("publish")
+  .description("Publish positions that survived verification. Goes through the admin API, never straight to the database.")
+  .option("--election <slug>")
+  .option("--limit <n>", "cap", (v) => Number(v))
+  .requiredOption("--reviewer <name>", "who is accountable for what goes live")
+  .option("--api <url>", "admin API base", process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000")
+  .option("--dry-run")
+  .action(async (o) => {
+    const token = process.env.ADMIN_TOKEN;
+    if (!token || token === "change-me") throw new Error("ADMIN_TOKEN is not configured");
+
+    // Only IN_REVIEW: the verifier moves a position there when a quote survived an
+    // independent reading. A DRAFT has not been checked and does not go live.
+    const ready = await prisma.position.findMany({
+      where: {
+        status: "IN_REVIEW",
+        NOT: { propositionId: null },
+        ...(o.election
+          ? { candidate: { candidacies: { some: { race: { election: { slug: o.election } } } } } }
+          : {}),
+      },
+      include: { candidate: { select: { fullName: true } }, issue: { select: { slug: true } }, evidence: true },
+      ...(o.limit ? { take: o.limit } : {}),
+    });
+
+    console.log(`${ready.length} verified positions ready`);
+    let published = 0;
+    const refused: string[] = [];
+
+    for (const p of ready) {
+      // The API refuses a stance with no evidence. Checking here too so the reason is
+      // visible in this output rather than only as a 422.
+      const isAbsence = p.stance === "NO_STATED_POSITION" || p.stance === "DECLINED_TO_STATE";
+      if (!isAbsence && p.evidence.length === 0) {
+        refused.push(`${p.candidate?.fullName} · ${p.issue.slug}: no evidence`);
+        continue;
+      }
+      if (o.dryRun) { published++; continue; }
+
+      // The API rate-limits, correctly — it is a public service and a client that
+      // ignores that is the problem. Back off rather than raising the limit.
+      let res: Response | null = null;
+      for (let attempt = 0; attempt < 6; attempt++) {
+        res = await fetch(`${o.api}/admin/positions/${p.id}/publish`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}`, "x-reviewer": o.reviewer },
+        });
+        if (res.status !== 429) break;
+        await new Promise((r) => setTimeout(r, 5000 * (attempt + 1)));
+      }
+      if (res?.ok) published++;
+      else refused.push(`${p.candidate?.fullName} · ${p.issue.slug}: ${res?.status} ${((await res?.text()) ?? "").slice(0, 120)}`);
+    }
+
+    console.log(`${published} published, ${refused.length} refused${o.dryRun ? "  (dry run)" : ""}`);
+    for (const r of refused.slice(0, 10)) console.log(`  ! ${r}`);
+    await prisma.$disconnect();
+  });
+
+program
   .command("map-bills")
   .description("Decide what a vote on each bill means for each proposition. One judgment per bill.")
   .option("--limit <n>", "bills to classify", (v) => Number(v))
