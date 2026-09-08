@@ -12,7 +12,7 @@ and covered, the app works. If it isn't, nothing else matters.
 spans of an archived document, and absence is shown as absence. The system cannot express an opinion
 because there is nowhere for one to go.
 
-Last revised 2026-09-06.
+Last revised 2026-09-08.
 
 ---
 
@@ -23,13 +23,22 @@ Last revised 2026-09-06.
 | Elections with real data | Texas general, Nov 3 2026 |
 | Races modelled | 39 (38 US House + 1 Senate) |
 | Certified candidates | 98 |
-| Candidate websites found | 187 of 241 (78%) |
-| Sites archived | 52 |
-| Published positions | **0** |
-| States with a working roster adapter | 2 (TX certified, NC filings) |
+| Candidate websites found | 191 of 270 |
+| Pages archived | 246 across 351 sources |
+| **Published positions** | **8,127 — 162 stated, 7,965 "no stated position"** |
+| Support : oppose | 1.5 : 1 (was 19.7 : 1 before propositions) |
+| States with a roster adapter | 5 — TX, NC, MN, ME, CO |
+| Roll-call votes recorded | 3,936 across 164 bills |
+| Tests | 281 |
 
-Working end to end: certified ballot → candidate websites → archived source → two-model extraction →
-adversarial verification → drafts with verbatim quotes. Nothing is published yet.
+Working end to end and live: certified ballot → candidate websites → crawled policy pages →
+archived sources → two-model extraction against propositions → adversarial verification →
+publication → address lookup → issue pages showing the question and the answer.
+
+**Phase 1 is met.** A voter in a covered Texas district sees every certified candidate, each
+candidate's answer or an honest "no stated position", and the archived source behind every quote.
+Coverage of certified candidates with at least one stated position sits just under the 30% kill
+criterion at 26%, which is why Phase 2 stayed mandatory and was built.
 
 ---
 
@@ -65,11 +74,12 @@ Texas, November 3 2026. Federal races only. The point is to publish something tr
 - [x] Two-model extraction with a verbatim-quote gate
 - [x] Adversarial verification that rejects slogans, accomplishments and wrong directions
 - [x] Propositions — one neutral yes/no question per issue
-- [ ] Re-extract against propositions and measure the support/oppose ratio
-- [ ] Crawl `/issues`, `/platform`, `/priorities` rather than the homepage alone
-- [ ] Render JavaScript-only sites (3 known failures)
-- [ ] Publish the surviving positions
-- [ ] The web app shows a real Texas race with real quotes
+- [x] Re-extract against propositions and measure the support/oppose ratio
+- [x] Crawl `/issues`, `/platform`, `/priorities` rather than the homepage alone
+- [ ] Render JavaScript-only sites. 3 candidates archive as 0, 41 and 48 characters of navigation
+      chrome. Needs a headless browser in the ingest path.
+- [x] Publish the surviving positions
+- [x] The web app shows a real Texas race with real quotes
 
 **Done when:** a voter in a Texas congressional district can see every certified candidate, each
 candidate's answer to each proposition or an honest "no stated position", and click through to the
@@ -101,7 +111,7 @@ candidate is speaking:
       around it.
 - [ ] **Candidate questionnaires.** Vote411 / League of Women Voters, Vote Smart. The candidate
       answers a fixed question, which is exactly the proposition shape.
-- [ ] **Deeper site crawling.** Policy content is usually one link off the homepage.
+- [x] **Deeper site crawling.** Policy content is usually one link off the homepage.
 - [ ] **Debate and forum transcripts** where they exist.
 
 Explicitly not a source: campaign finance. Who funds a candidate is not a statement of what they
@@ -116,10 +126,10 @@ and incumbents have positions drawn from their votes rather than their marketing
 
 A user types an address and gets their races. Without this the data is not reachable by a voter.
 
-- [ ] Census geocoder → state, county, congressional district, state legislative districts
+- [x] Census geocoder → state, county, congressional district, state legislative districts
 - [ ] `openstates/jurisdictions` for OCD division IDs covering every municipality and school district
-- [ ] Wire the existing district resolver to the home page
-- [ ] Show the coverage ceiling honestly: "we have your congressional race; we do not yet have your
+- [x] Wire the existing district resolver to the home page
+- [x] Show the coverage ceiling honestly: "we have your congressional race; we do not yet have your
       city council race"
 
 **Done when:** an address in a covered state returns the correct set of races, and an address in an
@@ -164,9 +174,10 @@ Every position is DRAFT until a person publishes it. That is the bottleneck, and
 adding people.
 
 - [x] Adversarial verifier that rejects positions a quote does not support
-- [ ] Review console shows verified drafts grouped by race, not one at a time
-- [ ] Spot-check sampling: a human reviews a random sample, and the sample's error rate decides
-      whether the batch publishes
+- [x] Review console shows verified drafts grouped by race, not one at a time
+- [x] Spot-check sampling: a reviewer reads a deterministic sample and publishes the race if it
+      holds up. Deterministic on purpose — a reshuffling sample lets a reviewer redraw until a
+      batch looks good.
 - [ ] Real authentication before a second reviewer exists
 
 **Done when:** publishing a race's positions takes minutes, and the error rate of published positions
@@ -176,11 +187,13 @@ is measured rather than assumed.
 
 ## Phase 6 — The voter-facing product
 
-- [ ] Issue-first browse: pick a proposition, see every candidate's answer side by side
-- [ ] Candidate page: every proposition, answered or honestly blank
-- [ ] Match quiz — answers never leave the device, never persisted
-- [ ] Share card
-- [ ] Corrections log, public
+- [x] Issue-first browse: pick a proposition, see every candidate's answer side by side
+- [x] Candidate page: every proposition, answered or honestly blank
+- [ ] Match quiz — works, but still asks the eight seeded QuizQuestion prompts rather than the
+      twenty propositions. The rest of the product now answers propositions, so the quiz is
+      matching against a different set of questions than the positions were extracted for.
+- [x] Share card
+- [x] Corrections log, public
 
 ---
 
