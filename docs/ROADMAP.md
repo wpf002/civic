@@ -133,10 +133,12 @@ Six states publish a clean bulk file today. Each is one adapter with a fixture t
 
 - [x] Texas — certified ballot, federal + state + county, no municipal
 - [x] North Carolina — filings, includes municipal and county
-- [ ] Virginia — carries an incumbent flag and a campaign website column
-- [ ] Minnesota — 372 offices, plus a separate local file
-- [ ] Maine — full county row officers
-- [ ] Colorado — state and judicial only; record the ceiling
+- [x] Minnesota — state + federal file and a separate local file. Latin-1, not UTF-8.
+- [x] Maine — full county row officers
+- [x] Colorado — state and judicial only; ceiling recorded on the run
+- [ ] ~~Virginia~~ — checked, and it publishes only a single House District 20 special
+      election file for November 2026, not a statewide list. The research that named it
+      overstated what is there. Revisit for a cycle where it publishes the full list.
 
 Then the second tier: Florida, South Dakota, Alaska. Michigan publishes no statewide list at all and
 points to 83 counties — do not schedule it.
@@ -148,6 +150,11 @@ Two rules learned the hard way:
   that would generalise. It does not; Texas is a one-off.
 
 **Done when:** 6 states have adapters with fixture tests, and each records its own coverage ceiling.
+
+Five done: TX (certified, federal+state+county), NC (filings, includes municipal), MN (state and
+local files), ME (county row officers), CO (state and judicial only). Maine and Colorado publish
+spreadsheets and nothing else, read by a minimal xlsx reader in `packages/ingest/src/xlsx.ts`
+rather than a dependency.
 
 ---
 
