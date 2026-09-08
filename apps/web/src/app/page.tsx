@@ -24,7 +24,7 @@ export default async function Home() {
     <div className="mx-auto max-w-2xl px-5">
       <header className="pt-8">
         <Wordmark />
-        <p className="mono mt-3">Issue-first voter guide · Dallas County, TX</p>
+        <p className="mono mt-3">Issue-first voter guide · Texas</p>
       </header>
 
       <main id="main">
@@ -41,7 +41,7 @@ export default async function Home() {
           ))}
         </ul>
 
-        <form action="/e/2027-11-dallas" className="mt-10">
+        <form action="/ballot" className="mt-10">
           <label htmlFor="address" className="block text-summary font-semibold">
             Where do you vote?
           </label>
