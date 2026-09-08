@@ -219,3 +219,19 @@ describe("the quiz asks the same questions the positions answer", () => {
     expect(slugs).not.toContain("local-development-zoning");
   });
 });
+
+describe("coverage is a number, not an implication", () => {
+  it("reports how many known jurisdictions actually have a race", async () => {
+    const res = await app.inject({ method: "GET", url: "/v1/coverage" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+
+    // Importing the OCD list makes the database look national. A row count is not
+    // coverage, so the ratio is published rather than left to be inferred.
+    expect(body.totals.known).toBeGreaterThan(body.totals.withRaces);
+    expect(body.note).toMatch(/A name is not coverage/);
+    for (const j of body.jurisdictions as Array<{ known: number; withRaces: number }>) {
+      expect(j.withRaces).toBeLessThanOrEqual(j.known);
+    }
+  });
+});

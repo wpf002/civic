@@ -146,14 +146,29 @@ describe("the admin routes", () => {
     await prisma.candidate.delete({ where: { id: cand.id } });
   });
 
-  it("refuses the shared token entirely once it is turned off", async () => {
-    process.env.ALLOW_SHARED_ADMIN_TOKEN = "false";
+  it("refuses the shared token as soon as a reviewer account exists", async () => {
+    // Off by DEFAULT, not by opt-out. Leaving the weaker path on until someone
+    // remembers to disable it means it stays on forever: the strong path works, so
+    // nothing ever forces the switch.
+    delete process.env.ALLOW_SHARED_ADMIN_TOKEN;
     const res = await app.inject({
       method: "GET",
       url: "/admin/queue",
       headers: { authorization: "Bearer test-admin-token" },
     });
     expect(res.statusCode).toBe(401);
+    expect(res.json().why).toMatch(/not evidence of who decided/);
+  });
+
+  it("lets the shared token back in only on an explicit opt-in", async () => {
+    // The recovery path: locked out with no working account.
+    process.env.ALLOW_SHARED_ADMIN_TOKEN = "true";
+    const res = await app.inject({
+      method: "GET",
+      url: "/admin/queue",
+      headers: { authorization: "Bearer test-admin-token" },
+    });
+    expect(res.statusCode).toBe(200);
     delete process.env.ALLOW_SHARED_ADMIN_TOKEN;
   });
 });

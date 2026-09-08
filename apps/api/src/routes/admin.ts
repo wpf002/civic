@@ -37,9 +37,24 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       return;
     }
 
+    // The shared token stops working as soon as a reviewer account exists. Leaving
+    // it on by default meant the weaker path stayed available forever and nobody
+    // would ever notice — the strong path works, so nothing forces the switch.
+    // Opting back in is explicit and temporary.
     const shared = process.env.ADMIN_TOKEN;
-    const sharedAllowed = process.env.ALLOW_SHARED_ADMIN_TOKEN !== "false";
-    if (!sharedAllowed) return reply.code(401).send({ error: "sign in as a reviewer" });
+    const forced = process.env.ALLOW_SHARED_ADMIN_TOKEN === "true";
+    if (!forced) {
+      const reviewers = await prisma.reviewer.count({ where: { disabledAt: null } });
+      if (reviewers > 0) {
+        return reply.code(401).send({
+          error: "sign in as a reviewer",
+          why:
+            "A reviewer account exists, so the shared token is disabled. It attributes every " +
+            "action to a name typed into a form, which is not evidence of who decided anything. " +
+            "Set ALLOW_SHARED_ADMIN_TOKEN=true only to recover access.",
+        });
+      }
+    }
     if (!shared || shared === "change-me") {
       return reply.code(503).send({ error: "no reviewer session and ADMIN_TOKEN is not configured" });
     }

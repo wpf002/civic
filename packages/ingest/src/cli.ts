@@ -17,9 +17,11 @@ import {
 } from "./adapters/candidate-sites.js";
 import { NOVEMBER_2026, fetchCertifiedRoster } from "./adapters/tx-sos.js";
 import { parseQuestionnaire } from "./adapters/questionnaire.js";
+import { OCD_URL, selectDivisions } from "./adapters/ocd.js";
+import { parseCsv } from "./adapters/nc-sbe.js";
 import { billKey, fetchMemberVotes, fetchRollCalls, rollCallUrl } from "./adapters/congress-votes.js";
 import { resolveCouncilSeat, resolveFederalSeat } from "./seats.js";
-import { proposePairsInRace } from "@civic/core";
+import { adminSessionToken, proposePairsInRace } from "@civic/core";
 import { createHash } from "node:crypto";
 import { crawlCampaignSite } from "./crawl.js";
 import { diffRoster, nameKey } from "./roster.js";
@@ -468,6 +470,67 @@ program
   });
 
 program
+  .command("divisions")
+  .description("Import Open Civic Data jurisdictions. A spine, not coverage — importing adds no races.")
+  .option("--states <list>", "comma-separated, e.g. tx,nc. Omit for all.")
+  .option("--dry-run")
+  .action(async (o) => {
+    const res = await fetch(OCD_URL, { redirect: "follow" });
+    if (!res.ok) throw new Error(`OCD division list returned ${res.status}`);
+    const rows = parseCsv(await res.text());
+    const states = o.states ? String(o.states).split(",").map((s: string) => s.trim()) : undefined;
+    const divisions = selectDivisions(rows, states ? { states } : {});
+
+    console.log(`${rows.length} divisions in the file, ${divisions.length} usable${states ? ` in ${states.join(", ")}` : ""}`);
+    const byLevel: Record<string, number> = {};
+    for (const d of divisions) byLevel[d.level] = (byLevel[d.level] ?? 0) + 1;
+    for (const [k, v] of Object.entries(byLevel).sort((a, b) => b[1] - a[1])) {
+      console.log(`  ${k.padEnd(18)} ${v}`);
+    }
+    if (o.dryRun) { console.log("\n(dry run, nothing written)"); await prisma.$disconnect(); return; }
+
+    // Parents first, so a child never references a row that does not exist yet.
+    const depth = (d: { id: string }) => d.id.split("/").length;
+    divisions.sort((a, b) => depth(a) - depth(b));
+
+    let created = 0;
+    let updated = 0;
+    for (const d of divisions) {
+      const parent = d.parentId
+        ? await prisma.jurisdiction.findUnique({ where: { ocdId: d.parentId } })
+        : null;
+      const existing = await prisma.jurisdiction.findUnique({ where: { ocdId: d.id } });
+      if (existing) {
+        // Never renames or re-parents an existing jurisdiction silently: an office
+        // already hangs off it, and moving it would move races with it.
+        if (!existing.parentId && parent) {
+          await prisma.jurisdiction.update({ where: { id: existing.id }, data: { parentId: parent.id } });
+          updated++;
+        }
+        continue;
+      }
+      await prisma.jurisdiction.create({
+        data: {
+          level: d.level,
+          name: d.name,
+          ocdId: d.id,
+          ...(parent ? { parentId: parent.id } : {}),
+        },
+      });
+      created++;
+    }
+
+    const withRaces = await prisma.jurisdiction.count({ where: { offices: { some: { races: { some: {} } } } } });
+    const total = await prisma.jurisdiction.count();
+    console.log(`\n${created} created, ${updated} re-parented`);
+    console.log(
+      `${withRaces} of ${total} jurisdictions have a race. The other ${total - withRaces} are names, ` +
+        `not coverage — the ballot endpoint reports them as not covered until an adapter finds candidates.`,
+    );
+    await prisma.$disconnect();
+  });
+
+program
   .command("questionnaire")
   .description("Load candidate questionnaire answers from a CSV. No extraction — the candidate answered.")
   .requiredOption("--file <path>")
@@ -632,8 +695,7 @@ program
     // takes the same path, the same checks and the same audit trail as a merge done
     // by hand in the review console. A second implementation would drift from it.
     if (!o.reviewer) throw new Error("--merge-strong requires --reviewer: someone is accountable for a removal");
-    const token = process.env.ADMIN_TOKEN;
-    if (!token || token === "change-me") throw new Error("ADMIN_TOKEN is not configured");
+    const token = await adminSessionToken(o.api);
 
     let mergedOk = 0;
     const failures: string[] = [];

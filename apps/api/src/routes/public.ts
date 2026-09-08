@@ -69,6 +69,51 @@ function shapePosition<T extends { evidence: EvidenceRow[] }>(p: T) {
 }
 
 export const publicRoutes: FastifyPluginAsync = async (app) => {
+  /**
+   * What this product covers, stated as a number rather than implied by a silence.
+   *
+   * Importing 8,200 jurisdictions from the Open Civic Data list makes the database
+   * look national. It is not: a jurisdiction is a name until an adapter finds
+   * candidates for it. Anyone reading a row count as coverage would be wrong, so the
+   * ratio is published rather than left to be inferred.
+   */
+  app.get("/coverage", async () => {
+    const [byLevel, withRaces, elections] = await Promise.all([
+      prisma.jurisdiction.groupBy({ by: ["level"], _count: true }),
+      prisma.jurisdiction.findMany({
+        where: { offices: { some: { races: { some: {} } } } },
+        select: { level: true, name: true, ocdId: true },
+      }),
+      prisma.election.findMany({
+        where: { electionDate: { gte: new Date() } },
+        select: { slug: true, name: true, state: true, electionDate: true },
+        orderBy: { electionDate: "asc" },
+      }),
+    ]);
+
+    const covered = new Map<string, number>();
+    for (const j of withRaces) covered.set(j.level, (covered.get(j.level) ?? 0) + 1);
+
+    const total = byLevel.reduce((n, l) => n + l._count, 0);
+    return {
+      jurisdictions: byLevel
+        .map((l) => ({
+          level: l.level,
+          known: l._count,
+          withRaces: covered.get(l.level) ?? 0,
+        }))
+        .sort((a, b) => b.known - a.known),
+      totals: { known: total, withRaces: withRaces.length },
+      elections,
+      // Said in words, because a ratio of 3 to 8,205 is easy to read the wrong way.
+      note:
+        `${withRaces.length} of ${total} known jurisdictions have a race in this database. ` +
+        `The rest are names imported from the Open Civic Data division list so that districts, ` +
+        `races and coverage claims refer to the same places by the same identifiers. A name is ` +
+        `not coverage, and an address in one of them is reported as not covered.`,
+    };
+  });
+
   app.get("/issues", async () =>
     prisma.issue.findMany({
       orderBy: { sortOrder: "asc" },

@@ -2,19 +2,32 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import Fastify, { type FastifyInstance } from "fastify";
 import { prisma } from "@civic/db";
 import { adminRoutes } from "./admin.js";
+import { createReviewer, login } from "../auth.js";
 
 /**
  * The rule under test: a candidate never leaves a ballot without a document.
  */
-const TOKEN = "test-admin-token";
-const AUTH = { authorization: `Bearer ${TOKEN}`, "x-reviewer": "tester" };
+/**
+ * These tests sign in as a real reviewer rather than using the shared token, because
+ * the shared token is refused as soon as a reviewer account exists — which is the
+ * point of it. A test that kept using the weak path would stop testing what runs.
+ */
+const REVIEWER_EMAIL = "zz-admin-test@example.org";
+const REVIEWER_PASSWORD = "admin-test-password-1234";
+let TOKEN = "";
+let AUTH: Record<string, string> = {};
 const PREFIX = "zz-admin-test-";
 
 let app: FastifyInstance;
 let raceId: string;
 
 beforeAll(async () => {
-  process.env.ADMIN_TOKEN = TOKEN;
+  process.env.ADMIN_TOKEN = "test-admin-token";
+  await prisma.reviewerSession.deleteMany({ where: { reviewer: { email: REVIEWER_EMAIL } } });
+  await prisma.reviewer.deleteMany({ where: { email: REVIEWER_EMAIL } });
+  await createReviewer(REVIEWER_EMAIL, "tester", REVIEWER_PASSWORD);
+  TOKEN = (await login(REVIEWER_EMAIL, REVIEWER_PASSWORD))!.token;
+  AUTH = { authorization: `Bearer ${TOKEN}`, "x-reviewer": "tester" };
   app = Fastify();
   await app.register(adminRoutes, { prefix: "/admin" });
   await app.ready();
@@ -30,7 +43,24 @@ async function purge() {
     where: { slug: { startsWith: PREFIX } },
     select: { id: true },
   });
-  if (mine.length) await prisma.candidacy.deleteMany({ where: { candidateId: { in: mine.map((m) => m.id) } } });
+  const ids = mine.map((m) => m.id);
+  if (ids.length) {
+    // Everything that points at a candidate has to go first, in dependency order.
+    // Positions and sources were added to these tests after this helper was written,
+    // and the foreign key is what caught it rather than a silently orphaned row.
+    const positions = await prisma.position.findMany({
+      where: { candidateId: { in: ids } },
+      select: { id: true },
+    });
+    if (positions.length) {
+      await prisma.evidence.deleteMany({
+        where: { positions: { some: { id: { in: positions.map((p) => p.id) } } } },
+      });
+      await prisma.position.deleteMany({ where: { candidateId: { in: ids } } });
+    }
+    await prisma.source.deleteMany({ where: { candidateId: { in: ids } } });
+    await prisma.candidacy.deleteMany({ where: { candidateId: { in: ids } } });
+  }
   await prisma.candidate.deleteMany({ where: { slug: { startsWith: PREFIX } } });
   await prisma.rosterDiff.deleteMany({ where: { raceId } });
   await prisma.rosterSnapshot.deleteMany({ where: { raceId } });
@@ -39,6 +69,8 @@ async function purge() {
 
 beforeEach(purge);
 afterAll(async () => {
+  await prisma.reviewerSession.deleteMany({ where: { reviewer: { email: REVIEWER_EMAIL } } });
+  await prisma.reviewer.deleteMany({ where: { email: REVIEWER_EMAIL } });
   await purge();
   await app?.close();
 });
@@ -92,11 +124,19 @@ describe("auth", () => {
     expect((await app.inject({ url: "/admin/queue" })).statusCode).toBe(401);
   });
 
-  it("refuses to run at all on the placeholder token", async () => {
-    process.env.ADMIN_TOKEN = "change-me";
-    const r = await app.inject({ url: "/admin/queue", headers: AUTH });
-    expect(r.statusCode).toBe(503);
-    process.env.ADMIN_TOKEN = TOKEN;
+  it("refuses a request with no credentials at all", async () => {
+    const r = await app.inject({ url: "/admin/queue" });
+    expect(r.statusCode).toBe(401);
+  });
+
+  it("refuses the shared token now that a reviewer account exists", async () => {
+    // The weaker path closes on its own. Leaving it open until someone remembers to
+    // shut it means it never shuts, because the strong path already works.
+    const r = await app.inject({
+      url: "/admin/queue",
+      headers: { authorization: "Bearer test-admin-token", "x-reviewer": "whoever" },
+    });
+    expect(r.statusCode).toBe(401);
   });
 });
 
@@ -146,7 +186,7 @@ describe("a removal cannot be accepted without a document", () => {
     expect(task!.resolvedAt).not.toBeNull();
   });
 
-  it("requires a named reviewer", async () => {
+  it("records who accepted it, from the session rather than a header", async () => {
     const diff = await quarantinedRemoval();
     const r = await app.inject({
       method: "POST",
@@ -154,7 +194,11 @@ describe("a removal cannot be accepted without a document", () => {
       headers: { authorization: `Bearer ${TOKEN}` },
       payload: { artifactUrl: "https://example.org/x.pdf" },
     });
-    expect(r.statusCode).toBe(400);
+    expect(r.statusCode).toBe(200);
+    // A removal is the most consequential action here. Who did it must be a verified
+    // identity, not a string the caller chose.
+    const decided = await prisma.rosterDiff.findUniqueOrThrow({ where: { id: diff.id } });
+    expect(decided.decidedBy).toBe("tester");
   });
 
   it("will not decide the same diff twice", async () => {
@@ -233,7 +277,7 @@ describe("positions", () => {
 });
 
 describe("merging two records that are the same person", () => {
-  const P = "zz-merge-test-";
+  
 
   async function makePair(sameRace: boolean) {
     const race = await prisma.race.findFirstOrThrow({
@@ -243,11 +287,11 @@ describe("merging two records that are the same person", () => {
       where: { election: { slug: "2026-11-tx" }, NOT: { id: race.id } },
     });
     const keep = await prisma.candidate.create({
-      data: { slug: `${P}keep`, fullName: "ZZ Sylvia Garcia", externalIds: { txsos: "1" } },
+      data: { slug: `${PREFIX}keep`, fullName: "ZZ Sylvia Garcia", externalIds: { txsos: "1" } },
     });
     const merge = await prisma.candidate.create({
       data: {
-        slug: `${P}merge`,
+        slug: `${PREFIX}merge`,
         fullName: "ZZ Sylvia R Garcia",
         websiteUrl: "https://example.org/sylvia",
         externalIds: { fec: "H8TX29999" },
@@ -268,10 +312,10 @@ describe("merging two records that are the same person", () => {
   }
 
   async function purge() {
-    const mine = await prisma.candidate.findMany({ where: { slug: { startsWith: P } }, select: { id: true } });
+    const mine = await prisma.candidate.findMany({ where: { slug: { startsWith: `${PREFIX}` } }, select: { id: true } });
     const ids = mine.map((m) => m.id);
     if (ids.length) await prisma.candidacy.deleteMany({ where: { candidateId: { in: ids } } });
-    await prisma.candidate.deleteMany({ where: { slug: { startsWith: P } } });
+    await prisma.candidate.deleteMany({ where: { slug: { startsWith: `${PREFIX}` } } });
   }
 
   afterEach(purge);
@@ -325,7 +369,7 @@ describe("merging two records that are the same person", () => {
     expect(await prisma.candidate.findUnique({ where: { id: merge.id } })).not.toBeNull();
   });
 
-  it("requires a named reviewer", async () => {
+  it("records the signed-in reviewer as the one who merged", async () => {
     const { keep, merge } = await makePair(true);
     const res = await app.inject({
       method: "POST",
@@ -333,7 +377,10 @@ describe("merging two records that are the same person", () => {
       headers: { authorization: `Bearer ${TOKEN}` },
       payload: { keepId: keep.id, mergeId: merge.id },
     });
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(200);
+    const after = await prisma.candidate.findUniqueOrThrow({ where: { id: keep.id } });
+    const merges = (after.externalIds as { mergedFrom: Array<{ by: string }> }).mergedFrom;
+    expect(merges[0]!.by).toBe("tester");
   });
 });
 
@@ -341,7 +388,7 @@ describe("publishing a batch", () => {
   it("refuses a stance with no evidence, exactly as it does singly", async () => {
     const issue = await prisma.issue.findFirstOrThrow();
     const cand = await prisma.candidate.create({
-      data: { slug: "zz-batch-test", fullName: "ZZ Batch Test" },
+      data: { slug: `${PREFIX}batch`, fullName: "ZZ Batch Test" },
     });
     const bare = await prisma.position.create({
       data: {
@@ -386,13 +433,15 @@ describe("publishing a batch", () => {
     await prisma.candidate.delete({ where: { id: cand.id } });
   });
 
-  it("requires a named reviewer", async () => {
+  it("attributes a batch to the signed-in reviewer", async () => {
     const res = await app.inject({
       method: "POST",
       url: "/admin/positions/publish-batch",
       headers: { authorization: `Bearer ${TOKEN}` },
-      payload: { ids: ["x"] },
+      payload: { ids: ["no-such-id"] },
     });
-    expect(res.statusCode).toBe(400);
+    // No header, and it still works, because the session names the person.
+    expect(res.statusCode).toBe(200);
+    expect(res.json().published).toBe(0);
   });
 });

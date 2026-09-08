@@ -16,6 +16,7 @@ import {
 } from "./phase0.js";
 import { VERIFY_MODEL, directionRatio, runVerification } from "./verify.js";
 import { proposeMappings, verifyMappings, type BillInput } from "./bills.js";
+import { adminSessionToken } from "@civic/core";
 
 const program = new Command("civic-extract");
 
@@ -73,8 +74,7 @@ program
   .option("--api <url>", "admin API base", process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000")
   .option("--dry-run")
   .action(async (o) => {
-    const token = process.env.ADMIN_TOKEN;
-    if (!token || token === "change-me") throw new Error("ADMIN_TOKEN is not configured");
+    const token = await adminSessionToken(o.api);
 
     // Only IN_REVIEW: the verifier moves a position there when a quote survived an
     // independent reading. A DRAFT has not been checked and does not go live.
