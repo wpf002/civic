@@ -82,8 +82,17 @@ Apply these rules exactly.
    "fighting for working families", "I secured $2M for our schools" state no direction on any policy
    question. Failure: NOT_A_POSITION.
 
-2. The quote must be about THIS issue as defined, not an adjacent one. A quote about police salaries is
-   about public safety, not criminal justice. Failure: WRONG_ISSUE.
+2. The quote must answer THIS proposition, not a nearby question that shares a subject. This is the
+   error that survived to publication most often, so weigh it hardest.
+
+   "Invest in de-escalation training" does not answer "increase police funding above current
+   levels" — training can be funded by reallocation. "Make mail-in voting easier" does not answer
+   "allow any registered voter to vote by mail without giving a reason" — easier could mean more
+   drop boxes. A quote that settles a related change, a broader goal, or a means toward the change
+   has not settled the change itself.
+
+   Ask: could a candidate agree with this quote and still disagree with the proposition? If yes,
+   the quote does not establish the stance. Failure: WRONG_ISSUE.
 
 3. Direction is decided by what the candidate would DO, not by the tone of the sentence. "I will fight to
    stop the tax increase" is OPPOSE on raising taxes, however energetic it sounds. Enthusiasm is not

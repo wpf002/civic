@@ -16,6 +16,7 @@ import {
 } from "./phase0.js";
 import { VERIFY_MODEL, directionRatio, runVerification } from "./verify.js";
 import { proposeMappings, verifyMappings, type BillInput } from "./bills.js";
+import { AUDIT_MODEL, auditPublished, wilsonInterval } from "./audit.js";
 import { adminSessionToken } from "@civic/core";
 
 const program = new Command("civic-extract");
@@ -251,6 +252,45 @@ program
       console.log(`\n  REFUTED ${x.billId} -> ${x.issueSlug}`);
       console.log(`     ${x.reason.slice(0, 320)}`);
     }
+    await prisma.$disconnect();
+  });
+
+program
+  .command("audit")
+  .description("Measure the error rate of positions that are already live. Changes nothing.")
+  .option("--election <slug>")
+  .option("--size <n>", "sample size", (v) => Number(v), 60)
+  .option("--seed <n>", "so a reported rate can be reproduced", (v) => Number(v), 42)
+  .option("--model <id>", "auditor model", AUDIT_MODEL)
+  .action(async (o) => {
+    const r = await auditPublished({
+      ...(o.election ? { electionSlug: o.election } : {}),
+      size: o.size,
+      seed: o.seed,
+      model: o.model,
+    });
+
+    const [lo, hi] = wilsonInterval(r.correct, r.sampled);
+    console.log(`sampled ${r.sampled} live positions · ${r.correct} correct · ${r.costCents.toFixed(2)}c`);
+    console.log(`error rate ${(100 * r.errorRate).toFixed(1)}%`);
+    // A rate from a sample is a range. Reporting the point alone is the kind of
+    // precision that misleads whoever relies on it.
+    console.log(`95% confidence the true accuracy is between ${(100 * lo).toFixed(1)}% and ${(100 * hi).toFixed(1)}%`);
+    console.log(`seed ${o.seed} — rerun with the same seed to audit the same rows`);
+
+    if (Object.keys(r.faults).length) {
+      console.log("\nfaults:");
+      for (const [k, v] of Object.entries(r.faults).sort((a, b) => b[1] - a[1])) {
+        console.log(`  ${k.padEnd(22)} ${v}`);
+      }
+    }
+    for (const e of r.errors.slice(0, 10)) {
+      console.log(`\n  [${e.fault}] ${e.candidate} · ${e.issue} · ${e.stance}`);
+      console.log(`     "${e.quote}"`);
+      console.log(`     ${e.explanation.slice(0, 260)}`);
+      console.log(`     ${e.sourceUrl}`);
+    }
+    console.log("\nNothing was changed. An audit that fixes what it finds cannot report a rate.");
     await prisma.$disconnect();
   });
 

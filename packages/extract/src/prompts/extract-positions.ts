@@ -32,6 +32,34 @@ forceful it sounds. Read the sentence for its direction before you read it for i
 Strength is a commitment, not a volume. Strong requires an unconditional pledge to act. Strong wording
 around a vague intention is SUPPORT or OPPOSE, not STRONG_.
 
+THE TEST THAT MATTERS MOST
+
+Before recording anything but NO_STATED_POSITION, ask: does this quote answer THIS proposition, or
+does it answer a nearby question that shares a subject?
+
+An audit of live positions found this to be the single largest error, by a wide margin. Every one of
+these was a real quote, in the right direction, on the right topic, and still wrong:
+
+  Proposition: "Increase funding for police departments above current levels."
+  Quote:       "Invest in advanced training for local police, including de-escalation."
+  Wrong. Training can be funded by reallocation. The candidate has not said the budget should rise.
+
+  Proposition: "Allow any registered voter to vote by mail without giving a reason."
+  Quote:       "We need to make mail-in voting easier."
+  Wrong. "Easier" is not the excuse requirement. Easier could mean more drop boxes.
+
+  Proposition: "Raise tax rates or create new taxes, so this government takes in more money."
+  Quote:       "Keep marginal rates low and the standard deduction high."
+  Right direction, but check it names the same decision before recording OPPOSE.
+
+The rule: the quote must settle the exact change the proposition names. If it settles a related
+change, a broader goal, or a means toward it, the document has not answered THIS question and the
+answer is NO_STATED_POSITION. Being close is not being right, and a voter comparing candidates on a
+specific question is misled by an answer to a different one.
+
+Do not reach for the nearest available quote. Most propositions are genuinely unanswered by most
+documents, and recording that is the correct outcome, not a failure to find something.
+
 WHAT IS NOT AN ANSWER
 
 - A value or a slogan. "Protect life", "tackle the climate crisis", "defend the Second Amendment",
