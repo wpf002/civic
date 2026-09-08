@@ -127,6 +127,35 @@ would do, and treating it as one is the kind of inference this product exists to
 **Done when:** at least half of certified candidates in a covered race have one verified position,
 and incumbents have positions drawn from their votes rather than their marketing.
 
+**NOT MET, and not reachable from these sources.** Measured 2026-09-08, Texas November 2026:
+
+| | |
+|---|---|
+| Certified candidates | 98 |
+| With no campaign website at all | **37** |
+| Of those, holding only a state id and no FEC committee | 25 |
+| Ceiling on website-only coverage | **62%** |
+| Races where half of certified candidates could ever be covered | far fewer — several have 2 archived of 5 |
+
+Both halves of the criterion fail for structural reasons rather than for want of effort.
+
+The vote half fails because congressional roll calls do not answer these questions — 3,936 votes,
+164 bills, zero confirmed mappings. Recorded above.
+
+The website half fails because 37 of 98 certified candidates have no website to read. 25 of those
+never filed an FEC committee, which is where a campaign's own website address comes from, so there
+is no record of a site to find. The remaining route is a search engine, and "the top hit for this
+name" is how one candidate's words get attributed to another — the one error this product must not
+make. Deriving a domain from the personal email in the state file is also available and also
+refused: that address is dropped at the parse boundary on purpose.
+
+**What would meet it:** real questionnaire data. The loader is built and strict, and a questionnaire
+answer needs no website. It needs a partnership or a person entering answers from a lawful source,
+which is a decision about the product rather than a piece of code.
+
+Leaving this open rather than lowering the number. A criterion moved to match the result measures
+nothing.
+
 ---
 
 ## Phase 3 — Address to ballot
