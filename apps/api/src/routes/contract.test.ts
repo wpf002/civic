@@ -133,3 +133,51 @@ describe("coverage", () => {
     expect(states.stated).toBe(1);
   });
 });
+
+describe("address to ballot", () => {
+  it("returns only races whose district the address is in, and names what is missing", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/ballot",
+      payload: { address: "1500 Marilla St, Dallas, TX 75201" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+
+    // A congressional race for a district this address is not in is not this
+    // voter's race, however much data we hold for it.
+    const cd = body.districts.congressional as string;
+    const house = body.ballot
+      .flatMap((e: { races: Array<{ office: string; seat: string }> }) => e.races)
+      .filter((r: { office: string }) => r.office === "United States Representative");
+    for (const r of house) expect(cd).toContain(r.seat);
+
+    // Coverage is stated, never implied. A short ballot must not read as a whole one.
+    expect(body.coverageNote).toMatch(/not your whole ballot|do not yet cover/);
+    expect(Array.isArray(body.notCovered)).toBe(true);
+  }, 30000);
+
+  it("never returns the address it was given, only what the geocoder matched", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/ballot",
+      payload: { address: "1500 Marilla St, Dallas, TX 75201" },
+    });
+    const raw = res.body;
+    // The submitted string is not echoed anywhere in the response. The matched
+    // address is the geocoder's normalisation, which is a different thing.
+    expect(raw).not.toContain("1500 Marilla St, Dallas, TX 75201");
+    expect(res.json().matched).toBeTruthy();
+  }, 30000);
+
+  it("says why an address failed rather than returning an empty ballot", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/ballot",
+      payload: { address: "not a real address at all zzz" },
+    });
+    // An empty ballot for a bad address reads as "you have no elections".
+    expect(res.statusCode).toBe(404);
+    expect(res.json().why).toMatch(/geocoder/i);
+  }, 30000);
+});

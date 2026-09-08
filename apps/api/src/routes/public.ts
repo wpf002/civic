@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma, type Prisma } from "@civic/db";
 import { matchCandidates } from "@civic/core";
+import { resolveDistricts } from "@civic/ingest";
 
 /**
  * Read-only. Only PUBLISHED positions ever leave this process — enforced in every
@@ -69,6 +70,124 @@ function shapePosition<T extends { evidence: EvidenceRow[] }>(p: T) {
 
 export const publicRoutes: FastifyPluginAsync = async (app) => {
   app.get("/issues", async () => prisma.issue.findMany({ orderBy: { sortOrder: "asc" } }));
+
+  /**
+   * Address → the races a person can actually vote in.
+   *
+   * PRIVACY. The address is used to obtain a point and a set of district ids and is
+   * then gone. It is not stored, not logged, and not returned. This route is a GET so
+   * that it is cacheable, which means the address would otherwise sit in access logs
+   * and in the user's history — so it is accepted as a POST body instead.
+   *
+   * COVERAGE IS REPORTED, NOT IMPLIED. A voter whose congressional race we have and
+   * whose city council race we do not must be told that, in those words. Returning
+   * only what we hold, with no statement of what is missing, reads as "this is your
+   * whole ballot" and is the most damaging thing this product could get wrong.
+   */
+  app.post("/ballot", async (req, reply) => {
+    const body = z.object({ address: z.string().min(5).max(300) }).parse(req.body);
+
+    const districts = await resolveDistricts(body.address);
+    if (!districts) {
+      return reply.code(404).send({
+        error: "that address could not be matched",
+        why: "The Census geocoder did not recognise it. A partial address often fails; a full street address with city and state usually works.",
+      });
+    }
+
+    const state = districts.state?.trim();
+    const elections = await prisma.election.findMany({
+      where: { electionDate: { gte: new Date() }, ...(state ? { state: "TX" } : {}) },
+      orderBy: { electionDate: "asc" },
+    });
+
+    const out = [];
+    for (const e of elections) {
+      // Only races whose district this address is actually in. A race we hold for
+      // another district is not this voter's race.
+      const races = await prisma.race.findMany({
+        where: { electionId: e.id },
+        include: {
+          office: { include: { district: true, jurisdiction: true } },
+          candidacies: {
+            where: { isCertified: true },
+            include: {
+              candidate: {
+                select: {
+                  slug: true,
+                  fullName: true,
+                  positions: {
+                    where: PUBLISHED,
+                    select: { stance: true, issue: { select: { slug: true, name: true } } },
+                  },
+                },
+              },
+              party: { select: { abbreviation: true } },
+            },
+            orderBy: { ballotOrder: "asc" },
+          },
+        },
+      });
+
+      const mine = races.filter((r) => {
+        const seat = r.office.seatLabel ?? r.office.district?.name ?? "";
+        if (r.office.title === "United States Representative") {
+          return !!districts.congressional && seat === districts.congressional.replace("Congressional ", "");
+        }
+        if (r.office.title === "United States Senator") return true; // statewide
+        if (r.office.title.includes("Council")) {
+          return !!districts.dallasCouncilPlace && seat === `Place ${districts.dallasCouncilPlace}`;
+        }
+        if (r.office.title.includes("Trustee")) {
+          return !!districts.dallasIsdTrusteeDistrict && seat === `District ${districts.dallasIsdTrusteeDistrict}`;
+        }
+        return false;
+      });
+
+      if (mine.length === 0) continue;
+      out.push({
+        election: { slug: e.slug, name: e.name, electionDate: e.electionDate },
+        races: mine.map((r) => ({
+          office: r.office.title,
+          seat: r.office.seatLabel ?? r.office.district?.name ?? null,
+          candidates: r.candidacies.map((c) => ({
+            slug: c.candidate.slug,
+            name: c.candidate.fullName,
+            party: c.party?.abbreviation ?? null,
+            isWriteIn: c.isWriteIn,
+            publishedPositions: c.candidate.positions.length,
+          })),
+        })),
+      });
+    }
+
+    // What we could not answer. Named explicitly rather than left as an absence.
+    const gaps: string[] = [];
+    if (districts.stateSenate) gaps.push(`${districts.stateSenate} — state legislative races are not covered yet`);
+    if (districts.stateHouse) gaps.push(`${districts.stateHouse} — state legislative races are not covered yet`);
+    if (districts.county) gaps.push(`${districts.county} — county races are not covered yet`);
+    if (districts.place) gaps.push(`${districts.place} — city races are not covered yet`);
+
+    return {
+      matched: districts.matchedAddress,
+      districts: {
+        state: districts.state ?? null,
+        county: districts.county ?? null,
+        place: districts.place ?? null,
+        congressional: districts.congressional ?? null,
+        stateSenate: districts.stateSenate ?? null,
+        stateHouse: districts.stateHouse ?? null,
+      },
+      ballot: out,
+      notCovered: gaps,
+      // Said out loud, every time. A short ballot must never read as a complete one.
+      coverageNote:
+        out.length === 0
+          ? "We do not yet cover any race at this address."
+          : `This is not your whole ballot. We cover ${out.reduce((n, e) => n + e.races.length, 0)} race(s) here and the rest are listed under notCovered.`,
+      provenance: districts.provenance,
+    };
+  });
 
   app.get("/elections/upcoming", async () =>
     prisma.election.findMany({

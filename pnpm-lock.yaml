@@ -32,6 +32,9 @@ importers:
       '@civic/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@civic/ingest':
+        specifier: workspace:*
+        version: link:../../packages/ingest
       '@fastify/cors':
         specifier: ^10.0.1
         version: 10.1.0
