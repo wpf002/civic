@@ -45,6 +45,14 @@ export interface RosterEntry {
    * API quota rediscovering ids it already had.
    */
   externalIds?: Record<string, string>;
+  /**
+   * Party as the source records it, e.g. "R", "D", "LIB".
+   *
+   * Voter-facing. The Texas SOS adapter parsed this from the start and dropped it on
+   * the floor, so every certified candidate reached the ballot page with no party
+   * next to their name.
+   */
+  party?: string | null;
 }
 
 export interface Roster {

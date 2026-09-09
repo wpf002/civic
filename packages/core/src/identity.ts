@@ -85,6 +85,16 @@ function firstNamesMatch(a: string, b: string): { match: boolean; why: string } 
   if ((a.length === 1 && b.startsWith(a)) || (b.length === 1 && a.startsWith(b))) {
     return { match: true, why: "first initial" };
   }
+  // A shortening the nickname table does not list. "Alex" for "Alexandra" is the
+  // real case: certified as Alex Mealer, filed with the FEC as Alexandra Mealer, and
+  // the two records stayed separate so her website never reached the ballot record.
+  //
+  // Three characters minimum. Two would pair "Jo" with "John" and "Joseph" alike,
+  // and the shorter name has to be a strict prefix, so "Alan" and "Alex" do not pair.
+  const [shortName, longName] = a.length <= b.length ? [a, b] : [b, a];
+  if (shortName.length >= 3 && longName.length > shortName.length && longName.startsWith(shortName)) {
+    return { match: true, why: "a shortening of the longer name" };
+  }
   return { match: false, why: "" };
 }
 

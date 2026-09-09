@@ -18,6 +18,8 @@ import {
 import { NOVEMBER_2026, fetchCertifiedRoster } from "./adapters/tx-sos.js";
 import { parseQuestionnaire } from "./adapters/questionnaire.js";
 import { OCD_URL, selectDivisions } from "./adapters/ocd.js";
+import { candidateDomains, isNeverACandidateSite, provesCandidate } from "./adapters/site-guess.js";
+import { htmlToText } from "./html-text.js";
 import { parseCsv } from "./adapters/nc-sbe.js";
 import { billKey, fetchMemberVotes, fetchRollCalls, rollCallUrl } from "./adapters/congress-votes.js";
 import { resolveCouncilSeat, resolveFederalSeat } from "./seats.js";
@@ -187,6 +189,7 @@ program
   .option("--cycle <yyyy>", "FEC election year", (v) => Number(v), 2026)
   .option("--congress <n>", "Congress number for the official-site lookup", (v) => Number(v), 119)
   .option("--only-missing", "look up only candidates that have no website yet")
+  .option("--guess", "for candidates no record names a site for, try likely domains and prove them")
   .option("--dry-run")
   .action(async (o) => {
     const found = new Map<string, CandidateSite>();
@@ -257,6 +260,50 @@ program
       found.set(key, preferSite(found.get(key) ?? null, site)!);
     }
     console.log(`OpenStates:    ${osHits} of ${people.length} sitting state legislators`);
+
+    // 4. Last resort, and only for candidates no record names a site for. 25 of the
+    //    Texas certified field never filed an FEC committee, which is where a
+    //    campaign's own address comes from, and neither the state file nor the party
+    //    nominee lists carry a website.
+    //
+    //    Nothing is accepted because of how the URL was found. The page itself has to
+    //    name the candidate, name the office, and read as a campaign. A guess that
+    //    fails the proof is discarded, which is the same outcome as never making it —
+    //    which is why this is safe and taking a search result is not.
+    if (o.guess) {
+      const UA = {
+        "user-agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+          "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 (+civic voter guide)",
+      };
+      let guessed = 0;
+      let disproved = 0;
+      for (const c of candidates) {
+        if (c.websiteUrl || found.has(nameKey(c.fullName))) continue;
+        const guessOpts = { fullName: c.fullName, state: o.state, office: "United States Representative" };
+        for (const domain of candidateDomains(guessOpts).slice(0, 10)) {
+          const url = `https://${domain}`;
+          if (isNeverACandidateSite(url)) continue;
+          try {
+            const res = await fetch(url, { redirect: "follow", headers: UA, signal: AbortSignal.timeout(8000) });
+            if (!res.ok) continue;
+            const proof = provesCandidate(htmlToText(await res.text()), "", guessOpts);
+            if (!proof.accepted) { disproved++; continue; }
+            found.set(nameKey(c.fullName), {
+              url: res.url,
+              kind: "CAMPAIGN",
+              assertedBy: "domain guessed, then proved by the page naming the candidate and the office",
+              assertedByUrl: res.url,
+            });
+            guessed++;
+            break;
+          } catch {
+            // A domain that does not resolve is the common case, not an error.
+          }
+        }
+      }
+      console.log(`guessed+proved: ${guessed}  (${disproved} domains existed and were refused)`);
+    }
 
     let wrote = 0;
     let already = 0;

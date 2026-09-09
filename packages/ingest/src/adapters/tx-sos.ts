@@ -159,6 +159,7 @@ export function toRosters(
       displayName: name,
       sourceName: c.fullName,
       isWriteIn: c.isWriteIn,
+      party: c.party,
       externalIds: { txsos: String(c.idCandidate) },
       sourceUrl: SOS_ENDPOINT,
     });

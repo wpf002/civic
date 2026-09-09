@@ -51,6 +51,7 @@ function toPayload(r: Roster): Prisma.InputJsonValue {
     entries: r.entries.map((e) => ({
       key: e.key,
       name: e.name,
+      party: e.party ?? null,
       ballotOrder: e.ballotOrder ?? null,
       isWriteIn: !!e.isWriteIn,
       isPlaceholder: !!e.isPlaceholder,
@@ -223,6 +224,15 @@ async function applyAdditive(
   basis: "FILED" | "CERTIFIED" = "FILED",
 ): Promise<void> {
   const now = new Date();
+
+  /** A party abbreviation the source used, resolved to a Party row. Never created. */
+  const partyId = async (abbrev: string | null | undefined): Promise<string | null> => {
+    if (!abbrev) return null;
+    const p = await prisma.party.findFirst({
+      where: { abbreviation: { equals: abbrev.trim(), mode: "insensitive" } },
+    });
+    return p?.id ?? null;
+  };
   for (const entry of roster.entries) {
     if (entry.isPlaceholder) continue; // an unnamed line is never a Candidate row
 
@@ -248,12 +258,15 @@ async function applyAdditive(
     // between "these are your choices" being true and being false.
     const certification = basis === "CERTIFIED" ? { isCertified: true, status: "QUALIFIED" as const, certifiedAt: now } : {};
 
+    const party = await partyId(entry.party);
+
     if (existing) {
       await prisma.candidacy.update({
         where: { id: existing.id },
         data: {
           lastObservedAt: now,
           observedSourceUrl: roster.sourceUrl,
+          ...(party && !existing.partyId ? { partyId: party } : {}),
           ...certification,
           ...(entry.ballotOrder != null ? { ballotOrder: entry.ballotOrder } : {}),
         },
@@ -270,6 +283,7 @@ async function applyAdditive(
         firstObservedAt: now,
         lastObservedAt: now,
         observedSourceUrl: roster.sourceUrl,
+        ...(party ? { partyId: party } : {}),
         ...certification,
         ...(entry.ballotOrder != null ? { ballotOrder: entry.ballotOrder } : {}),
       },

@@ -76,3 +76,28 @@ describe("pairing within a race", () => {
     expect([pairs[0]!.a.id, pairs[0]!.b.id]).toEqual(["1", "2"]);
   });
 });
+
+describe("shortened first names", () => {
+  it("pairs a shortening with its longer form, as `possible`", () => {
+    // Certified as "Alex Mealer", filed with the FEC as "Alexandra Mealer". The two
+    // records stayed separate, so her website never reached the ballot record.
+    expect(proposeSamePerson("Alex Mealer", "Alexandra Mealer")).toMatchObject({
+      confidence: "possible",
+    });
+    expect(proposeSamePerson("Sam Johnson", "Samuel Johnson")?.confidence).toBe("possible");
+  });
+
+  it("needs three characters, so Jo does not pair with John and Joseph alike", () => {
+    expect(proposeSamePerson("Jo Smith", "John Smith")).toBeNull();
+  });
+
+  it("needs a strict prefix, so Alan and Alex stay apart", () => {
+    expect(proposeSamePerson("Alan Reed", "Alex Reed")).toBeNull();
+    expect(proposeSamePerson("Chris Reed", "Christina Reed")?.confidence).toBe("possible");
+  });
+
+  it("never promotes a shortening to strong", () => {
+    // A shortening is a guess about a person. It goes to a reviewer, not to a merge.
+    expect(proposeSamePerson("Alex Mealer", "Alexandra Mealer")?.confidence).not.toBe("strong");
+  });
+});
