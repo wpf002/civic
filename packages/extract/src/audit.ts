@@ -42,6 +42,31 @@ export const FindingSchema = z.object({
 });
 export type Finding = z.infer<typeof FindingSchema>;
 
+export const ABSENCE_SYSTEM = `You are auditing a published claim that a candidate has NOT stated a
+position. A voter can read it right now, and it is shown to them as a finding about the candidate
+rather than a gap in our research.
+
+You are given a question and the full text of a document archived from that candidate's campaign
+site. Decide one thing: does this document state a position on that question?
+
+Answer correct=true when the document genuinely does not address it. That is the common and expected
+outcome — most campaign pages address a handful of questions and are silent on the rest, and
+recording that silence is the point of this product.
+
+Answer correct=false ONLY when the document does state a position that was missed. Quote the sentence
+that states it in your explanation. If you cannot quote one, the absence is correct.
+
+Do not count these as stating a position:
+  a value or a slogan — "protect life", "tackle the climate crisis", "fighting for families"
+  an accomplishment — "I secured $2M for our schools"
+  caring about the subject without saying what should change
+  a statement about a related but different question. "Invest in de-escalation training" is not a
+  position on whether police funding should rise; "make voting easier" is not a position on
+  no-excuse mail voting.
+
+The last one matters most. An absence is wrong only if the document answers THIS question, not a
+neighbouring one.`;
+
 export const AUDIT_SYSTEM = `You are auditing a claim that is already published on a public voter guide.
 A voter can read it right now.
 
@@ -99,6 +124,8 @@ export interface AuditOptions {
   seed?: number;
   /** Absences carry no quote; auditing them asks a different question. */
   includeAbsences?: boolean;
+  /** Audit ONLY absences. 7,965 of them were live and never measured. */
+  onlyAbsences?: boolean;
   model?: string;
   complete?: CompleteFn;
   concurrency?: number;
@@ -114,9 +141,11 @@ export async function auditPublished(opts: AuditOptions = {}): Promise<AuditRepo
   const live = await prisma.position.findMany({
     where: {
       status: "PUBLISHED",
-      ...(opts.includeAbsences
-        ? {}
-        : { stance: { notIn: ["NO_STATED_POSITION", "DECLINED_TO_STATE"] } }),
+      ...(opts.onlyAbsences
+        ? { stance: { in: ["NO_STATED_POSITION", "DECLINED_TO_STATE"] } }
+        : opts.includeAbsences
+          ? {}
+          : { stance: { notIn: ["NO_STATED_POSITION", "DECLINED_TO_STATE"] } }),
       ...(opts.electionSlug
         ? { candidate: { candidacies: { some: { race: { election: { slug: opts.electionSlug } } } } } }
         : {}),
@@ -125,7 +154,15 @@ export async function auditPublished(opts: AuditOptions = {}): Promise<AuditRepo
       id: true,
       stance: true,
       summary: true,
-      candidate: { select: { fullName: true } },
+      candidate: {
+        select: {
+          fullName: true,
+          // Sources hang off the candidate, not the position. An absence has no
+          // evidence row by definition, so the document it was decided from is
+          // reached this way.
+          sources: { select: { url: true, text: true }, take: 1, where: { NOT: { text: "" } } },
+        },
+      },
       issue: { select: { slug: true } },
       proposition: { select: { text: true } },
       evidence: {
@@ -156,9 +193,49 @@ export async function auditPublished(opts: AuditOptions = {}): Promise<AuditRepo
       const p = queue.shift();
       if (!p) return;
       const ev = p.evidence[0];
+
+      // An absence carries no quote by definition, so it is audited against the whole
+      // document instead: did we miss a position that is actually stated there? A
+      // wrong absence tells a voter a candidate is silent when they are not, which is
+      // a claim about the candidate and not about our coverage.
       if (!ev) {
-        report.sampled++;
-        report.faults.NO_EVIDENCE = (report.faults.NO_EVIDENCE ?? 0) + 1;
+        const doc = p.candidate?.sources?.[0];
+        if (!doc?.text) {
+          report.sampled++;
+          report.faults.NO_SOURCE = (report.faults.NO_SOURCE ?? 0) + 1;
+          continue;
+        }
+        try {
+          const res = await fn({
+            model,
+            system: ABSENCE_SYSTEM,
+            input:
+              `QUESTION: ${p.proposition?.text ?? p.issue.slug}\n\n` +
+              `PUBLISHED CLAIM: this candidate has not stated a position on it.\n\n` +
+              `THE ARCHIVED DOCUMENT:\n"""\n${doc.text.slice(0, 12000)}\n"""`,
+            schema: FindingSchema,
+          });
+          report.costCents += res.costCents;
+          report.sampled++;
+          if (res.output.correct) {
+            report.correct++;
+          } else {
+            report.faults.MISSED_POSITION = (report.faults.MISSED_POSITION ?? 0) + 1;
+            report.errors.push({
+              positionId: p.id,
+              candidate: p.candidate?.fullName ?? "unknown",
+              issue: p.issue.slug,
+              stance: p.stance,
+              fault: "MISSED_POSITION",
+              explanation: res.output.explanation,
+              quote: "",
+              sourceUrl: doc.url,
+            });
+          }
+        } catch {
+          report.sampled++;
+          report.faults.ERROR = (report.faults.ERROR ?? 0) + 1;
+        }
         continue;
       }
 

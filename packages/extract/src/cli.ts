@@ -262,8 +262,10 @@ program
   .option("--size <n>", "sample size", (v) => Number(v), 60)
   .option("--seed <n>", "so a reported rate can be reproduced", (v) => Number(v), 42)
   .option("--model <id>", "auditor model", AUDIT_MODEL)
+  .option("--absences", "audit 'no stated position' claims instead of stances")
   .action(async (o) => {
     const r = await auditPublished({
+      ...(o.absences ? { includeAbsences: true, onlyAbsences: true } : {}),
       ...(o.election ? { electionSlug: o.election } : {}),
       size: o.size,
       seed: o.seed,

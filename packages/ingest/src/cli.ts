@@ -20,7 +20,7 @@ import { parseQuestionnaire } from "./adapters/questionnaire.js";
 import { OCD_URL, selectDivisions } from "./adapters/ocd.js";
 import { candidateDomains, isNeverACandidateSite, provesCandidate } from "./adapters/site-guess.js";
 import { htmlToText } from "./html-text.js";
-import { parseCsv } from "./adapters/nc-sbe.js";
+import { NOVEMBER_2026 as NC_NOVEMBER_2026, fetchNcRoster, parseCsv } from "./adapters/nc-sbe.js";
 import { billKey, fetchMemberVotes, fetchRollCalls, rollCallUrl } from "./adapters/congress-votes.js";
 import { resolveCouncilSeat, resolveFederalSeat } from "./seats.js";
 import { adminSessionToken, proposePairsInRace } from "@civic/core";
@@ -84,7 +84,7 @@ program
 program
   .command("ingest")
   .description("Fetch a roster and PERSIST it: snapshot, diff, and apply if additive.")
-  .requiredOption("--adapter <name>", "dallas-isd | dallas-city-secretary | fec | tx-sos")
+  .requiredOption("--adapter <name>", "dallas-isd | dallas-city-secretary | fec | tx-sos | nc-sbe")
   .option("--sos-election <id>", "Texas SOS election id (default: 2026 November general)")
   .requiredOption("--election <slug>", "e.g. 2027-11-dallas")
   .requiredOption("--date <yyyy-mm-dd>", "the election date the source must match")
@@ -140,6 +140,23 @@ program
       for (const m of run.merged) {
         console.log(`  merged ${m.raceKey}: ${m.name} held ${m.candidateIds.length} FEC ids (${m.candidateIds.join(", ")})`);
       }
+      resolve = async (raceKey: string) => {
+        const { raceId, reason } = await resolveFederalSeat(o.election, raceKey);
+        if (!raceId) console.log(`  ! ${raceKey}: ${reason}`);
+        return raceId;
+      };
+    } else if (o.adapter === "nc-sbe") {
+      const run = await fetchNcRoster(o.date.includes("/") ? o.date : NC_NOVEMBER_2026, new Date());
+      rosters = run.rosters;
+      console.log(
+        `basis: ${run.basis} — ${run.candidateCount} candidates in ${run.rosters.length} modelled races ` +
+          `(${run.collapsedRows} duplicate county rows collapsed)`,
+      );
+      const unmappedTotal = run.unmapped.reduce((n, u) => n + u.count, 0);
+      console.log(
+        `  ${unmappedTotal} candidates in ${run.unmapped.length} contests this product does not model ` +
+          `yet (top: ${run.unmapped.slice(0, 3).map((u) => `${u.contest} x${u.count}`).join(", ")})`,
+      );
       resolve = async (raceKey: string) => {
         const { raceId, reason } = await resolveFederalSeat(o.election, raceKey);
         if (!raceId) console.log(`  ! ${raceKey}: ${reason}`);
@@ -278,9 +295,18 @@ program
       };
       let guessed = 0;
       let disproved = 0;
+      // Senate and House produce different domain stems ("forsenate" vs "forcongress"),
+      // so the office has to come from the race rather than be assumed.
+      const senateOnly = await prisma.candidacy.count({
+        where: { race: { election: { slug: o.election }, office: { title: "United States Senator" } } },
+      });
+      const guessOffice =
+        senateOnly > 0 && candidates.length === senateOnly
+          ? "United States Senator"
+          : "United States Representative";
       for (const c of candidates) {
         if (c.websiteUrl || found.has(nameKey(c.fullName))) continue;
-        const guessOpts = { fullName: c.fullName, state: o.state, office: "United States Representative" };
+        const guessOpts = { fullName: c.fullName, state: o.state, office: guessOffice };
         for (const domain of candidateDomains(guessOpts).slice(0, 10)) {
           const url = `https://${domain}`;
           if (isNeverACandidateSite(url)) continue;
