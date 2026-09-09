@@ -21,12 +21,25 @@ import type { ZodType } from "zod";
 export const MODEL_A = process.env.EXTRACT_MODEL_A ?? "claude-opus-5";
 export const MODEL_B = process.env.EXTRACT_MODEL_B ?? "claude-sonnet-5";
 
-/** USD per million tokens, from the published price list. Update alongside model ids. */
-const PRICING: Record<string, { input: number; output: number }> = {
-  "claude-opus-5": { input: 5, output: 25 },
-  "claude-sonnet-5": { input: 2, output: 10 },
-  "claude-haiku-4-5": { input: 1, output: 5 },
+/**
+ * USD per million tokens, from the published price list, plus whether the model
+ * accepts `thinking: {type:"adaptive"}`. Update alongside model ids.
+ *
+ * Adaptive thinking is a Claude 5 feature; sending it to a model that does not
+ * support it is a hard 400, not a degraded response, so it has to be gated per
+ * model rather than sent hopefully. Unknown models default to NOT sending it —
+ * losing the feature costs quality, sending it wrongly costs the whole run.
+ */
+const PRICING: Record<string, { input: number; output: number; adaptiveThinking: boolean }> = {
+  "claude-opus-5": { input: 5, output: 25, adaptiveThinking: true },
+  "claude-sonnet-5": { input: 2, output: 10, adaptiveThinking: true },
+  "claude-haiku-4-5": { input: 1, output: 5, adaptiveThinking: false },
 };
+
+/** Whether `model` accepts adaptive thinking. Unknown models: assume not. */
+export function supportsAdaptiveThinking(model: string): boolean {
+  return PRICING[model]?.adaptiveThinking ?? false;
+}
 
 /**
  * A safety classifier declined the request. Not a crash and not a retry: the
@@ -89,19 +102,37 @@ function getClient(): Anthropic {
 
 export function estimateCostCents(
   model: string,
-  usage: { input_tokens: number; output_tokens: number },
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_input_tokens?: number | null;
+    cache_read_input_tokens?: number | null;
+  },
 ): number {
   const price = PRICING[model];
   if (!price) return 0; // unknown model: report 0 rather than guess a number into ExtractRun
-  return ((usage.input_tokens * price.input + usage.output_tokens * price.output) / 1_000_000) * 100;
+
+  // Cached input is billed differently: a write costs 1.25x an ordinary input token
+  // and a read costs 0.1x. Counting cache reads at full price would report a run as
+  // far more expensive than it was, which makes the --max-cost limit fire early.
+  const write = usage.cache_creation_input_tokens ?? 0;
+  const read = usage.cache_read_input_tokens ?? 0;
+  const plain = usage.input_tokens;
+
+  const inputCost = (plain + write * 1.25 + read * 0.1) * price.input;
+  return ((inputCost + usage.output_tokens * price.output) / 1_000_000) * 100;
 }
 
 export const complete: CompleteFn = async <T>(req: CompleteRequest<T>): Promise<Completion<T>> => {
   const res = await getClient().beta.messages.parse({
     model: req.model,
     max_tokens: req.maxTokens ?? 16000,
-    thinking: { type: "adaptive" },
-    system: req.system,
+    ...(supportsAdaptiveThinking(req.model) ? { thinking: { type: "adaptive" as const } } : {}),
+    // The system prompt is byte-identical across every call in a run — the same
+    // instructions and the same twenty propositions, sent once per source per model.
+    // A 466-source run sent it 932 times and paid full price each time. Cached, a
+    // repeat read costs a tenth of that, and the only cost is the first write.
+    system: [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: req.input }],
     output_config: { format: betaZodOutputFormat(req.schema) },
   });

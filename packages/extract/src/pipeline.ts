@@ -29,6 +29,8 @@ export interface ExtractInput {
 
 export interface ExtractOutcome {
   model: string;
+  /** The propositions this reader says the document addresses. */
+  addressed: string[];
   positions: ExtractedPosition[];
   rejected: Array<{ position: ExtractedPosition; reason: string }>;
   costCents: number;
@@ -95,19 +97,37 @@ export async function extractOnce(
     // Store the archived source's own span, never the model's rendering of it.
     positions.push({ ...p, quote: match.quote });
   }
-  return { model: res.model, positions, rejected, costCents: res.costCents };
+  // A slug the reader listed but produced no usable position for still counts as
+  // addressed: it is a claim that the document says something, and losing it would
+  // silently turn a rejected quote into an agreed silence.
+  const addressed = [...new Set([...(res.output.addressed ?? []), ...positions.map((p) => p.issueSlug)])]
+    .filter((s) => input.issueSlugs.includes(s));
+
+  return { model: res.model, addressed, positions, rejected, costCents: res.costCents };
 }
 
 /**
  * Two independent models. Agreement on stance => DRAFT with min confidence.
  * Disagreement or either NO_STATED => ReviewTask.
  */
-export function reconcile(a: ExtractOutcome, b: ExtractOutcome) {
+/**
+ * Two independent models. Agreement on stance => DRAFT with min confidence.
+ *
+ * `allIssueSlugs` is required to tell a shared silence from a shared oversight. A
+ * proposition neither reader listed as addressed is an agreed absence and becomes a
+ * NO_STATED_POSITION draft. One that only one reader listed is a disagreement and
+ * goes to a person, exactly as a stance disagreement does.
+ */
+export function reconcile(a: ExtractOutcome, b: ExtractOutcome, allIssueSlugs: string[] = []) {
   const byIssue = (o: ExtractOutcome) => new Map(o.positions.map((p) => [p.issueSlug, p]));
   const ma = byIssue(a);
   const mb = byIssue(b);
+  const sa = new Set(a.addressed);
+  const sb = new Set(b.addressed);
+
   const agreed: ExtractedPosition[] = [];
   const flagged: Array<{ issueSlug: string; a?: ExtractedPosition; b?: ExtractedPosition }> = [];
+
   for (const slug of new Set([...ma.keys(), ...mb.keys()])) {
     const pa = ma.get(slug), pb = mb.get(slug);
     if (pa && pb && pa.stance === pb.stance) {
@@ -116,5 +136,23 @@ export function reconcile(a: ExtractOutcome, b: ExtractOutcome) {
       flagged.push({ issueSlug: slug, ...(pa ? { a: pa } : {}), ...(pb ? { b: pb } : {}) });
     }
   }
+
+  for (const slug of allIssueSlugs) {
+    if (ma.has(slug) || mb.has(slug)) continue;
+    if (sa.has(slug) || sb.has(slug)) {
+      // One reader says the document addresses this and produced nothing usable.
+      // That is a disagreement about whether the candidate spoke, not a silence.
+      if (!flagged.some((f) => f.issueSlug === slug)) flagged.push({ issueSlug: slug });
+      continue;
+    }
+    agreed.push({
+      issueSlug: slug,
+      stance: "NO_STATED_POSITION",
+      summary: "The document does not address this question.",
+      quote: "",
+      confidence: Math.min(0.9, 0.9),
+    });
+  }
+
   return { agreed, flagged };
 }

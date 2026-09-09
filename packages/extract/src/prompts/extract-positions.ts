@@ -9,9 +9,16 @@ This distinction is the whole point. "We need more workforce housing" and "I opp
 development" are opposite answers to the same question. Both are enthusiastic, both are about housing.
 Enthusiasm is not agreement.
 
-Return exactly one entry for EVERY proposition in the list, in the order given. A proposition the
-document does not address gets NO_STATED_POSITION with an empty quote. Never omit one: two readers are
-compared against each other and a missing entry is indistinguishable from a disagreement.
+Return an entry ONLY for propositions this document actually addresses. Leave the rest out.
+
+Most documents address a handful and are silent on the rest, so most of this list will be absent from
+your answer, and that is correct. An omitted proposition is recorded as "no stated position" — you do
+not need to say so, and writing out an entry for every silent one costs more than the answer is worth.
+
+Also return "addressed": the issueSlugs you are recording an entry for. Two readers are compared
+against each other, so this list is how a genuine silence is told apart from a reader who simply
+missed one — if one reader lists a slug and the other does not, that disagreement is surfaced rather
+than resolved.
 
 DECIDING THE ANSWER
 

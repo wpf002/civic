@@ -432,6 +432,13 @@ model Source {
   publisher   String?
   publishedAt DateTime? // when the source itself was published
   capturedAt  DateTime   @default(now()) // when we archived it; the only date that makes the substring check auditable
+  /// When this document was last read by the extractor, and by which run.
+  ///
+  /// Skipping on "has evidence" was wrong: a document that produced only absences
+  /// has no evidence rows, so every run read it again at full price. Most documents
+  /// produce only absences.
+  extractedAt   DateTime?
+  extractRunId  String?
   contentHash String // sha256 of normalized text; dedup key
   rawPath     String? // object storage key for the archived original
   text        String // normalized plain text. The substring gate runs against this exact string.

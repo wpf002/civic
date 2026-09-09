@@ -21,6 +21,14 @@ export const ExtractedPositionSchema = z.object({
 export type ExtractedPosition = z.infer<typeof ExtractedPositionSchema>;
 
 export const ExtractionOutputSchema = z.object({
+  /**
+   * Which propositions this document addresses. Everything else is silence.
+   *
+   * Returning an entry for all twenty and writing a summary for each cost most of
+   * the output budget, and output is priced five times input. A document that
+   * addresses two questions now returns two entries instead of twenty.
+   */
+  addressed: z.array(z.string()).default([]),
   positions: z.array(ExtractedPositionSchema),
 });
 
@@ -37,5 +45,6 @@ export const ExtractionOutputSchema = z.object({
  * The prompt states the limits, so the model still aims for them.
  */
 export const LenientExtractionOutputSchema = z.object({
+  addressed: z.array(z.string()).default([]),
   positions: z.array(ExtractedPositionSchema.extend({ summary: z.string(), quote: z.string() })),
 });

@@ -116,9 +116,11 @@ export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
       ...(opts.electionSlug
         ? { candidate: { candidacies: { some: { race: { election: { slug: opts.electionSlug } } } } } }
         : {}),
-      // A source whose evidence already exists has been read. Reading it again costs
-      // the same and produces the same answer.
-      ...(opts.force ? {} : { evidence: { none: {} } }),
+      // A source that has been read is not read again. Keyed on extractedAt, not on
+      // whether it produced evidence: most documents produce only absences, which
+      // create no evidence rows, so an evidence-based check re-read almost everything
+      // at full price on every run.
+      ...(opts.force ? {} : { extractedAt: null }),
       // Only sources we have text for. A source we could not archive cannot be quoted.
       NOT: { text: "" },
     },
@@ -176,6 +178,11 @@ export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
           rejected: [],
           error: "source is not linked to a candidate; extraction needs to know whose words these are",
         });
+        // A skipped source is still a source that has been dealt with. Without this
+        // the progress count drifts below the total and the estimate never reaches
+        // zero, which reads as a hung run.
+        done++;
+        opts.onProgress?.(done, sources.length, source.url);
         continue;
       }
 
@@ -193,7 +200,11 @@ export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
         (i) => i.levels.some((l) => levels.has(l)) && i.propositions.length > 0,
       );
       const issueSlugs = applicable.map((i) => i.slug);
-      if (issueSlugs.length === 0) continue;
+      if (issueSlugs.length === 0) {
+        done++;
+        opts.onProgress?.(done, sources.length, source.candidate?.fullName ?? source.url);
+        continue;
+      }
       const propositions = applicable.map((i) => ({
         issueSlug: i.slug,
         text: i.propositions[0]!.text,
@@ -222,7 +233,7 @@ export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
           (r) => `${r.position.issueSlug}: ${r.reason}`,
         );
 
-        const { agreed, flagged } = reconcile(a, b);
+        const { agreed, flagged } = reconcile(a, b, issueSlugs);
         detail.agreed = agreed.map((p) => `${p.issueSlug}=${p.stance}`);
         detail.flagged = flagged.map((f) => `${f.issueSlug}[${f.a?.stance ?? "-"}/${f.b?.stance ?? "-"}]`);
 
@@ -279,6 +290,15 @@ export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
             return;
           }
         }
+      }
+
+      // Marked read whether or not it produced anything. A document that says nothing
+      // has still been read, and reading it again will still find nothing.
+      if (!opts.dryRun && !detail.error) {
+        await prisma.source.update({
+          where: { id: source.id },
+          data: { extractedAt: new Date(), extractRunId: run!.id },
+        });
       }
 
       report.details.push(detail);

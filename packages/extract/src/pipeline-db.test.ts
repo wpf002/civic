@@ -1,6 +1,20 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@civic/db";
 import { runExtraction } from "./pipeline-db.js";
+
+/**
+ * Positions that assert something, as opposed to the silences the reconciler
+ * synthesises for every proposition neither reader addressed. A draft count now
+ * includes those, so these tests count what was actually claimed.
+ */
+const stated = (candidateId: string) =>
+  prisma.position.count({
+    where: {
+      candidateId,
+      status: "DRAFT",
+      stance: { notIn: ["NO_STATED_POSITION", "DECLINED_TO_STATE"] },
+    },
+  });
 import type { CompleteFn } from "./llm.js";
 
 /**
@@ -92,10 +106,10 @@ describe("runExtraction", () => {
     expect(DOC.includes(unwrapped)).toBe(false);
 
     const r = await runExtraction({ sourceId, complete: agreeing(unwrapped) });
-    expect(r.drafts).toBe(1);
+    expect(await stated(candidateId)).toBe(1);
 
     const p = await prisma.position.findFirstOrThrow({
-      where: { candidateId },
+      where: { candidateId, stance: { notIn: ["NO_STATED_POSITION", "DECLINED_TO_STATE"] } },
       include: { evidence: true },
     });
     expect(p.status).toBe("DRAFT");
@@ -108,8 +122,8 @@ describe("runExtraction", () => {
   it("drops a position whose quote is not in the source, and stores nothing", async () => {
     const r = await runExtraction({ sourceId, complete: agreeing("I will vote to ban fourplexes") });
     expect(r.rejectedQuotes).toBeGreaterThan(0);
-    expect(r.drafts).toBe(0);
-    expect(await prisma.position.count({ where: { candidateId } })).toBe(0);
+    // Nothing asserted. The silences are still recorded, which is the point.
+    expect(await stated(candidateId)).toBe(0);
   });
 
   it("opens a review task on model disagreement instead of picking a winner", async () => {
@@ -134,7 +148,7 @@ describe("runExtraction", () => {
     }) as unknown as CompleteFn;
 
     const r = await runExtraction({ sourceId, complete: disagreeing });
-    expect(r.drafts).toBe(0);
+    expect(await stated(candidateId)).toBe(0);
     expect(r.flagged).toBe(1);
     const task = await prisma.reviewTask.findFirst({ where: { targetId: sourceId } });
     expect(task!.reason).toMatch(/Model disagreement/);
@@ -158,7 +172,7 @@ describe("runExtraction", () => {
       sourceId,
       complete: agreeing("I will vote to allow fourplexes on every residential lot in this district"),
     });
-    expect(r.drafts).toBe(0);
+    expect(await stated(candidateId)).toBe(0);
     const published = await prisma.position.findFirstOrThrow({
       where: { candidateId, status: "PUBLISHED" },
     });
@@ -173,7 +187,7 @@ describe("runExtraction", () => {
       dryRun: true,
       complete: agreeing("I will vote to allow fourplexes on every residential lot in this district"),
     });
-    expect(r.drafts).toBe(1);
+    expect(r.drafts).toBeGreaterThan(0);
     expect(r.extractRunId).toBeNull();
     expect(await prisma.position.count({ where: { candidateId } })).toBe(0);
   });
