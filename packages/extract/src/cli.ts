@@ -17,6 +17,7 @@ import {
 import { VERIFY_MODEL, directionRatio, runVerification } from "./verify.js";
 import { proposeMappings, verifyMappings, type BillInput } from "./bills.js";
 import { AUDIT_MODEL, auditPublished, wilsonInterval } from "./audit.js";
+import { estimateRunCost } from "./pipeline-db.js";
 import { adminSessionToken } from "@civic/core";
 
 const program = new Command("civic-extract");
@@ -35,8 +36,32 @@ program
   .option("--model-a <id>", "first extractor model", MODEL_A)
   .option("--model-b <id>", "second, independent extractor model", MODEL_B)
   .option("--concurrency <n>", "sources processed at once", (v) => Number(v), 6)
+  .option("--estimate", "print what this run would cost and exit, spending nothing")
   .option("--dry-run", "report what would happen and write nothing")
   .action(async (o) => {
+    const scope = {
+      ...(o.source ? { sourceId: o.source } : {}),
+      ...(o.candidate ? { candidateSlug: o.candidate } : {}),
+      ...(o.election ? { electionSlug: o.election } : {}),
+      ...(o.force ? { force: true } : {}),
+    };
+    const est = await estimateRunCost(scope);
+    console.log(
+      `${est.sources} sources to read · about $${(est.totalCents / 100).toFixed(2)} ` +
+        `(${est.centsPerSource.toFixed(1)}c each, from ${est.basedOn})`,
+    );
+    if (o.estimate) {
+      console.log("Nothing was spent. Drop --estimate to run it.");
+      await prisma.$disconnect();
+      return;
+    }
+    if (est.totalCents > o.maxCost) {
+      console.log(
+        `\nThat is over the ${o.maxCost}c limit, so it will stop partway. ` +
+          `Raise it with --max-cost ${Math.ceil(est.totalCents * 1.2)} to finish in one run.`,
+      );
+    }
+
     const started = Date.now();
     const report = await runExtraction({
       concurrency: o.concurrency,

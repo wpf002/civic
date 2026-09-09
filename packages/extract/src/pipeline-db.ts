@@ -87,6 +87,62 @@ export interface RunReport {
   }>;
 }
 
+/**
+ * What a run would cost, without spending anything.
+ *
+ * Uses this project's own measured rate rather than a token estimate: cost per
+ * source is dominated by how many propositions a document addresses, which no
+ * counting of input tokens predicts. The rate comes from completed ExtractRun rows,
+ * so it tracks the real cost as prompts and models change, and falls back to the
+ * last measured figure when there is no history.
+ */
+export async function estimateRunCost(
+  opts: RunOptions = {},
+): Promise<{ sources: number; centsPerSource: number; totalCents: number; basedOn: string }> {
+  const sources = await prisma.source.count({
+    where: {
+      ...(opts.sourceId ? { id: opts.sourceId } : {}),
+      ...(opts.candidateSlug ? { candidate: { slug: opts.candidateSlug } } : {}),
+      ...(opts.electionSlug
+        ? { candidate: { candidacies: { some: { race: { election: { slug: opts.electionSlug } } } } } }
+        : {}),
+      ...(opts.force ? {} : { extractedAt: null }),
+      NOT: { text: "" },
+    },
+  });
+
+  // Runs of a handful of sources are test fixtures and one-off probes, and their
+  // rounded whole-cent costs make the rate look an order of magnitude too low. A real
+  // run reads more than five documents.
+  const history = await prisma.extractRun.findMany({
+    where: { finishedAt: { not: null }, costCents: { gt: 0 }, sourceCount: { gte: 5 } },
+    orderBy: { startedAt: "desc" },
+    take: 5,
+    select: { costCents: true, sourceCount: true },
+  });
+
+  // Averaging is wrong here. A run that aborted on an exhausted balance recorded a
+  // large sourceCount and almost no cost, and averaging it in produced an estimate of
+  // 1c per source against a real rate of 8. An estimate that under-reports invites
+  // the surprise it exists to prevent, so this takes the highest recent rate and says
+  // so. Rates below 1c are aborted runs and are dropped outright.
+  const rates = history
+    .map((r) => r.costCents / r.sourceCount)
+    .filter((r) => r >= 1)
+    .sort((a, b) => b - a);
+
+  const measured = rates[0] ?? 8.4;
+
+  return {
+    sources,
+    centsPerSource: measured,
+    totalCents: sources * measured,
+    basedOn: rates.length
+      ? `the most expensive of ${rates.length} completed runs`
+      : "the last measured rate",
+  };
+}
+
 export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
   const modelA = opts.modelA ?? MODEL_A;
   const modelB = opts.modelB ?? MODEL_B;

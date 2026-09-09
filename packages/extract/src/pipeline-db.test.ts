@@ -65,6 +65,11 @@ async function purge() {
     await prisma.candidate.deleteMany({ where: { id: { in: ids } } });
   }
   await prisma.reviewTask.deleteMany({ where: { reason: { contains: PREFIX } } });
+  // These tests write real ExtractRun rows, and the cost estimator reads them. Eight
+  // one-source runs at a rounded whole cent made the estimated rate 1c per source
+  // against a real 8.4c — a test quietly corrupting a number a person uses to decide
+  // whether to spend money.
+  await prisma.extractRun.deleteMany({ where: { sourceCount: { lte: 2 } } });
 }
 
 beforeEach(async () => {
