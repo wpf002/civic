@@ -130,6 +130,8 @@ export interface AuditOptions {
   complete?: CompleteFn;
   concurrency?: number;
   contextChars?: number;
+  /** Stop once the run has spent this many cents. */
+  maxCostCents?: number;
 }
 
 export async function auditPublished(opts: AuditOptions = {}): Promise<AuditReport> {
@@ -188,8 +190,14 @@ export async function auditPublished(opts: AuditOptions = {}): Promise<AuditRepo
   };
 
   const queue = [...chosen];
+  let stopped = false;
   const worker = async () => {
     for (;;) {
+      if (stopped) return;
+      if (opts.maxCostCents != null && report.costCents >= opts.maxCostCents) {
+        stopped = true;
+        return;
+      }
       const p = queue.shift();
       if (!p) return;
       const ev = p.evidence[0];
@@ -275,9 +283,11 @@ export async function auditPublished(opts: AuditOptions = {}): Promise<AuditRepo
           quote: ev.quote.slice(0, 180),
           sourceUrl: ev.source.url,
         });
-      } catch {
+      } catch (err) {
         report.sampled++;
         report.faults.ERROR = (report.faults.ERROR ?? 0) + 1;
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/credit balance|authentication_error|invalid x-api-key/i.test(msg)) stopped = true;
       }
     }
   };

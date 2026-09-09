@@ -118,6 +118,8 @@ export interface VerifyOptions {
   dryRun?: boolean;
   complete?: CompleteFn;
   concurrency?: number;
+  /** Stop once the run has spent this many cents. Defaults are set by the CLI. */
+  maxCostCents?: number;
 }
 
 export interface VerifyReport {
@@ -178,8 +180,18 @@ export async function runVerification(opts: VerifyOptions = {}): Promise<VerifyR
   const survivors: Array<{ stance: string }> = [];
   const queue = [...drafts];
 
+  let stopped = false;
+
   const worker = async () => {
     for (;;) {
+      if (stopped) return;
+      if (opts.maxCostCents != null && report.costCents >= opts.maxCostCents) {
+        stopped = true;
+        report.errors.push(
+          `stopped at ${report.costCents.toFixed(2)}c, the cost limit. ${queue.length} not checked.`,
+        );
+        return;
+      }
       const p = queue.shift();
       if (!p) return;
       const quote = p.evidence[0]?.quote;
@@ -264,6 +276,8 @@ export async function runVerification(opts: VerifyOptions = {}): Promise<VerifyR
           report.failures.ERROR = (report.failures.ERROR ?? 0) + 1;
           const msg = err instanceof Error ? err.message : String(err);
           if (report.errors.length < 10) report.errors.push(msg.slice(0, 300));
+          // Identical for every remaining position. Stop rather than repeat it.
+          if (/credit balance|authentication_error|invalid x-api-key/i.test(msg)) stopped = true;
         }
         report.checked++;
       }

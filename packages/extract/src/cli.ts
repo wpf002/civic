@@ -28,7 +28,9 @@ program
   .option("--candidate <slug>")
   .option("--election <slug>", "only this election's sources. Without it, every source in the database.")
   .option("--force", "re-read sources that already produced positions")
-  .option("--max-cost <cents>", "stop once the run has spent this much", (v) => Number(v))
+  // Defaults to a cap rather than to unlimited. A forgotten flag should cost 500
+  // cents, not the balance. Raise it deliberately with --max-cost.
+  .option("--max-cost <cents>", "stop once the run has spent this much", (v) => Number(v), 500)
   .option("--limit <n>", "cap sources processed", (v) => Number(v))
   .option("--model-a <id>", "first extractor model", MODEL_A)
   .option("--model-b <id>", "second, independent extractor model", MODEL_B)
@@ -48,7 +50,7 @@ program
       ...(o.candidate ? { candidateSlug: o.candidate } : {}),
       ...(o.election ? { electionSlug: o.election } : {}),
       ...(o.force ? { force: true } : {}),
-      ...(o.maxCost ? { maxCostCents: o.maxCost } : {}),
+      maxCostCents: o.maxCost,
       ...(o.limit ? { limit: o.limit } : {}),
       modelA: o.modelA,
       modelB: o.modelB,
@@ -182,6 +184,7 @@ program
   .command("map-bills")
   .description("Decide what a vote on each bill means for each proposition. One judgment per bill.")
   .option("--limit <n>", "bills to classify", (v) => Number(v))
+  .option("--max-cost <cents>", "stop once this run has spent this much", (v) => Number(v), 500)
   .option("--dry-run")
   .action(async (o) => {
     const bills = await prisma.voteRecord.groupBy({ by: ["billId"] });
@@ -232,7 +235,7 @@ program
     const report = await proposeMappings(
       fetched,
       propositions.map((p) => ({ id: p.id, issueSlug: p.issue.slug, text: p.text, yesMeans: p.yesMeans, noMeans: p.noMeans })),
-      { dryRun: !!o.dryRun },
+      { dryRun: !!o.dryRun, maxCostCents: o.maxCost },
     );
 
     console.log(`\n${report.pairsChecked} bill x proposition pairs checked · ${report.proposed} mappings proposed · ${report.costCents.toFixed(2)}c`);
@@ -268,6 +271,7 @@ program
   .option("--size <n>", "sample size", (v) => Number(v), 60)
   .option("--seed <n>", "so a reported rate can be reproduced", (v) => Number(v), 42)
   .option("--model <id>", "auditor model", AUDIT_MODEL)
+  .option("--max-cost <cents>", "stop once this run has spent this much", (v) => Number(v), 500)
   .option("--absences", "audit 'no stated position' claims instead of stances")
   .action(async (o) => {
     const r = await auditPublished({
@@ -276,6 +280,7 @@ program
       size: o.size,
       seed: o.seed,
       model: o.model,
+      maxCostCents: o.maxCost,
     });
 
     const [lo, hi] = wilsonInterval(r.correct, r.sampled);
@@ -308,12 +313,14 @@ program
   .option("--election <slug>")
   .option("--limit <n>", "cap positions checked", (v) => Number(v))
   .option("--model <id>", "verifier model", VERIFY_MODEL)
+  .option("--max-cost <cents>", "stop once this run has spent this much", (v) => Number(v), 500)
   .option("--dry-run")
   .action(async (o) => {
     const r = await runVerification({
       ...(o.election ? { electionSlug: o.election } : {}),
       ...(o.limit ? { limit: o.limit } : {}),
       model: o.model,
+      maxCostCents: o.maxCost,
       dryRun: !!o.dryRun,
     });
 

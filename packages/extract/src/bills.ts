@@ -152,7 +152,14 @@ export interface MapReport {
 export async function proposeMappings(
   bills: BillInput[],
   propositions: PropositionInput[],
-  opts: { dryRun?: boolean; model?: string; complete?: CompleteFn; concurrency?: number } = {},
+  opts: {
+    dryRun?: boolean;
+    model?: string;
+    complete?: CompleteFn;
+    concurrency?: number;
+    /** Stop once the run has spent this many cents. */
+    maxCostCents?: number;
+  } = {},
 ): Promise<MapReport> {
   const model = opts.model ?? MAP_MODEL;
   const fn = opts.complete ?? complete;
@@ -167,8 +174,15 @@ export async function proposeMappings(
     }
   }
 
+  let stopped = false;
+
   const worker = async () => {
     for (;;) {
+      if (stopped) return;
+      if (opts.maxCostCents != null && report.costCents >= opts.maxCostCents) {
+        stopped = true;
+        return;
+      }
       const job = queue.shift();
       if (!job) return;
       const { bill, prop } = job;
@@ -212,8 +226,11 @@ export async function proposeMappings(
             },
           });
         }
-      } catch {
+      } catch (err) {
         report.pairsChecked++;
+        const msg = err instanceof Error ? err.message : String(err);
+        // Identical for every remaining pair. Stop rather than repeat it.
+        if (/credit balance|authentication_error|invalid x-api-key/i.test(msg)) stopped = true;
       }
     }
   };
