@@ -149,6 +149,20 @@ name" is how one candidate's words get attributed to another — the one error t
 make. Deriving a domain from the personal email in the state file is also available and also
 refused: that address is dropped at the parse boundary on purpose.
 
+**Routes tried after that measurement, with results:**
+
+| Route | Outcome |
+|---|---|
+| Domain guess, then prove the page names the candidate and the office | **17 recovered**, 92 domains refused. Certified coverage 61 → 78 of 98. |
+| Wikidata `P856` | 2 usable of 37, plus a false positive: a Syracuse architecture professor also named Ted Brown |
+| State party nominee lists | LP Texas publishes no links, TX Greens none, TX GOP 403, TX Democrats 404 |
+| GDELT news index | Free and keyless, but returns zero articles for sitting members of Congress and intermittently fails to parse. Not usable. |
+| Search API | No key available. Would need one, with the same proof requirement the domain guess uses. |
+
+The remaining gap is concentrated and the party fix showed where: 19 of 78 major-party candidates
+have no website, against 18 of 20 Green, Libertarian, independent and unrecorded ones. Excluding
+minor-party candidates would meet the number and tilt the guide, so it stays as measured.
+
 **What would meet it:** real questionnaire data. The loader is built and strict, and a questionnaire
 answer needs no website. It needs a partnership or a person entering answers from a lawful source,
 which is a decision about the product rather than a piece of code.
