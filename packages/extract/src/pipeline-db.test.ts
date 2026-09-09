@@ -207,3 +207,44 @@ describe("processing many sources", () => {
     expect(seen).toEqual([...seen].sort((a, b) => a - b));
   });
 });
+
+/** Replays recorded output. Local, because the shared one lives in pipeline.test.ts. */
+const replay = (positions: unknown[]): CompleteFn =>
+  (async () => ({ model: "recorded", output: { positions }, costCents: 0.1 })) as unknown as CompleteFn;
+
+describe("not spending money twice", () => {
+  it("skips sources that already produced evidence", async () => {
+    // The default. Re-reading a source costs the same and produces the same answer.
+    const all = await runExtraction({ dryRun: true, force: true, complete: replay([]) });
+    const fresh = await runExtraction({ dryRun: true, complete: replay([]) });
+    expect(fresh.sources).toBeLessThanOrEqual(all.sources);
+  });
+
+  it("stops dead on an exhausted balance instead of repeating it per source", async () => {
+    // A run meant for 84 pages processed 466 and logged the same credit error for
+    // every one of them after the balance ran out.
+    let calls = 0;
+    const broke: CompleteFn = (async () => {
+      calls++;
+      throw new Error('400 {"error":{"message":"Your credit balance is too low"}}');
+    }) as unknown as CompleteFn;
+
+    await expect(
+      runExtraction({ dryRun: true, force: true, concurrency: 1, complete: broke }),
+    ).rejects.toThrow(/credit balance/);
+    // One source's two model calls, not every source's.
+    expect(calls).toBeLessThanOrEqual(2);
+  });
+
+  it("stops at the cost limit", async () => {
+    const pricey: CompleteFn = (async () => ({
+      model: "recorded",
+      output: { positions: [] },
+      costCents: 50,
+    })) as unknown as CompleteFn;
+
+    await expect(
+      runExtraction({ dryRun: true, force: true, maxCostCents: 60, complete: pricey }),
+    ).rejects.toThrow(/--max-cost limit/);
+  });
+});

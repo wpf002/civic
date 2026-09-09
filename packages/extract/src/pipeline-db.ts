@@ -21,11 +21,36 @@ import { prisma } from "@civic/db";
 import { MODEL_A, MODEL_B, ModelRefusalError, type CompleteFn } from "./llm.js";
 import { extractOnce, reconcile } from "./pipeline.js";
 
+/** Thrown to stop a run dead rather than repeat a failure hundreds of times. */
+export class FatalRunError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FatalRunError";
+  }
+}
+
 export interface RunOptions {
   /** Limit to one source. */
   sourceId?: string;
   /** Limit to one candidate's sources. */
   candidateSlug?: string;
+  /**
+   * Limit to one election.
+   *
+   * Absent, this walks EVERY source in the database. A run meant for 84 North
+   * Carolina pages processed 466 sources and spent the budget on Texas pages that
+   * had already been extracted, then ran out before reaching North Carolina.
+   */
+  electionSlug?: string;
+  /**
+   * Re-extract sources that already produced positions. Off by default.
+   *
+   * The same source read twice by the same models costs the same and produces the
+   * same answer.
+   */
+  force?: boolean;
+  /** Stop once the run has spent this many cents. */
+  maxCostCents?: number;
   /** Cap how many sources are processed in a run. */
   limit?: number;
   modelA?: string;
@@ -88,6 +113,12 @@ export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
     where: {
       ...(opts.sourceId ? { id: opts.sourceId } : {}),
       ...(opts.candidateSlug ? { candidate: { slug: opts.candidateSlug } } : {}),
+      ...(opts.electionSlug
+        ? { candidate: { candidacies: { some: { race: { election: { slug: opts.electionSlug } } } } } }
+        : {}),
+      // A source whose evidence already exists has been read. Reading it again costs
+      // the same and produces the same answer.
+      ...(opts.force ? {} : { evidence: { none: {} } }),
       // Only sources we have text for. A source we could not archive cannot be quoted.
       NOT: { text: "" },
     },
@@ -119,8 +150,20 @@ export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
   const queue = [...sources];
   let done = 0;
 
+  let fatal: FatalRunError | null = null;
+
   const worker = async () => {
     for (;;) {
+      if (fatal) return;
+      // A budget is a stop, not a warning. Without it a mistyped command spends
+      // whatever is in the account.
+      if (opts.maxCostCents != null && report.costCents >= opts.maxCostCents) {
+        fatal ??= new FatalRunError(
+          `stopped at ${report.costCents.toFixed(2)}c, the --max-cost limit. ` +
+            `${queue.length} sources were not processed.`,
+        );
+        return;
+      }
       const source = queue.shift();
       if (!source) return;
 
@@ -225,7 +268,16 @@ export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
             });
           }
         } else {
-          detail.error = err instanceof Error ? err.message : String(err);
+          const msg = err instanceof Error ? err.message : String(err);
+          detail.error = msg;
+          // An exhausted balance, a bad key or a revoked key fails identically for
+          // every remaining source. Repeating it once per source produced hundreds of
+          // identical log lines and no work.
+          if (/credit balance|authentication_error|invalid x-api-key|permission_error/i.test(msg)) {
+            fatal ??= new FatalRunError(`stopped: ${msg.slice(0, 200)}`);
+            report.details.push(detail);
+            return;
+          }
         }
       }
 
@@ -238,6 +290,21 @@ export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
   await Promise.all(
     Array.from({ length: Math.min(opts.concurrency ?? 6, sources.length) }, worker),
   );
+
+  if (fatal) {
+    if (run) {
+      await prisma.extractRun.update({
+        where: { id: run.id },
+        data: {
+          finishedAt: new Date(),
+          draftCount: report.drafts,
+          flaggedCount: report.flagged,
+          costCents: Math.round(report.costCents),
+        },
+      });
+    }
+    throw fatal;
+  }
 
   if (run) {
     await prisma.extractRun.update({

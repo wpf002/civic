@@ -26,6 +26,9 @@ program
   .description("Extract positions from archived sources. Writes DRAFTs; publishes nothing.")
   .option("--source <id>")
   .option("--candidate <slug>")
+  .option("--election <slug>", "only this election's sources. Without it, every source in the database.")
+  .option("--force", "re-read sources that already produced positions")
+  .option("--max-cost <cents>", "stop once the run has spent this much", (v) => Number(v))
   .option("--limit <n>", "cap sources processed", (v) => Number(v))
   .option("--model-a <id>", "first extractor model", MODEL_A)
   .option("--model-b <id>", "second, independent extractor model", MODEL_B)
@@ -43,6 +46,9 @@ program
       },
       ...(o.source ? { sourceId: o.source } : {}),
       ...(o.candidate ? { candidateSlug: o.candidate } : {}),
+      ...(o.election ? { electionSlug: o.election } : {}),
+      ...(o.force ? { force: true } : {}),
+      ...(o.maxCost ? { maxCostCents: o.maxCost } : {}),
       ...(o.limit ? { limit: o.limit } : {}),
       modelA: o.modelA,
       modelB: o.modelB,
