@@ -25,6 +25,7 @@
  */
 import { z } from "zod";
 import { prisma } from "@civic/db";
+import { DEFAULT_MAX_COST_CENTS } from "./pipeline-db.js";
 import { MODEL_A, MODEL_B, ModelRefusalError, complete, type CompleteFn } from "./llm.js";
 
 /** A verifier that is one of the extractors is grading its own work. */
@@ -143,6 +144,10 @@ const tally = (rows: Array<{ stance: string }>) => {
 };
 
 export async function runVerification(opts: VerifyOptions = {}): Promise<VerifyReport> {
+  // Default here, not only in the CLI: a caller that never mentions a budget
+  // must get one anyway. See DEFAULT_MAX_COST_CENTS.
+  const maxCostCents =
+    opts.maxCostCents === undefined ? DEFAULT_MAX_COST_CENTS : opts.maxCostCents;
   const model = opts.model ?? VERIFY_MODEL;
   const fn = opts.complete ?? complete;
 
@@ -185,7 +190,7 @@ export async function runVerification(opts: VerifyOptions = {}): Promise<VerifyR
   const worker = async () => {
     for (;;) {
       if (stopped) return;
-      if (opts.maxCostCents != null && report.costCents >= opts.maxCostCents) {
+      if (maxCostCents != null && report.costCents >= maxCostCents) {
         stopped = true;
         report.errors.push(
           `stopped at ${report.costCents.toFixed(2)}c, the cost limit. ${queue.length} not checked.`,

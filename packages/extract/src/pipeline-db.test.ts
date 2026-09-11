@@ -266,4 +266,38 @@ describe("not spending money twice", () => {
       runExtraction({ dryRun: true, force: true, maxCostCents: 60, complete: pricey }),
     ).rejects.toThrow(/--max-cost limit/);
   });
+
+  it("caps a caller that never mentions a budget", async () => {
+    // The gap that let runs on 2026-09-09 spend $8.74 and $23.71 hours after
+    // --max-cost shipped: the default lived on the CLI flag, so calling the
+    // function directly — a script, an agent, a REPL — was uncapped. Omitting
+    // the option has to mean DEFAULT_MAX_COST_CENTS, not infinity.
+    let calls = 0;
+    const pricey: CompleteFn = (async () => {
+      calls += 1;
+      return { model: "recorded", output: { positions: [] }, costCents: 300 };
+    }) as unknown as CompleteFn;
+
+    await expect(
+      runExtraction({ dryRun: true, force: true, concurrency: 1, complete: pricey }),
+    ).rejects.toThrow(/--max-cost limit/);
+    // 500c default: two calls (600c) trips it. Without the default this would
+    // have run the whole fixture set instead.
+    expect(calls).toBeLessThanOrEqual(4);
+  });
+
+  it("still allows an explicit opt-out", async () => {
+    const cheap: CompleteFn = (async () => ({
+      model: "recorded",
+      output: { positions: [] },
+      costCents: 1000,
+    })) as unknown as CompleteFn;
+
+    // null is the deliberate "no ceiling" — it must not be reinterpreted as the
+    // default, or an intentional full run becomes impossible.
+    const r = await runExtraction({
+      dryRun: true, force: true, maxCostCents: null, complete: cheap,
+    });
+    expect(r.costCents).toBeGreaterThan(500);
+  });
 });

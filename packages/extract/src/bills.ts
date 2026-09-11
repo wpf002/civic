@@ -21,6 +21,7 @@
 import { z } from "zod";
 import { prisma } from "@civic/db";
 import { MODEL_A, complete, type CompleteFn } from "./llm.js";
+import { DEFAULT_MAX_COST_CENTS } from "./pipeline-db.js";
 
 export const MAP_MODEL = process.env.BILL_MAP_MODEL ?? MODEL_A;
 
@@ -157,10 +158,14 @@ export async function proposeMappings(
     model?: string;
     complete?: CompleteFn;
     concurrency?: number;
-    /** Stop once the run has spent this many cents. */
-    maxCostCents?: number;
+    /** Omitted = DEFAULT_MAX_COST_CENTS; null = uncapped, deliberately. */
+    maxCostCents?: number | null;
   } = {},
 ): Promise<MapReport> {
+  // Default here, not only in the CLI: a caller that never mentions a budget
+  // must get one anyway. See DEFAULT_MAX_COST_CENTS.
+  const maxCostCents =
+    opts.maxCostCents === undefined ? DEFAULT_MAX_COST_CENTS : opts.maxCostCents;
   const model = opts.model ?? MAP_MODEL;
   const fn = opts.complete ?? complete;
   const report: MapReport = { bills: bills.length, pairsChecked: 0, proposed: 0, costCents: 0, details: [] };
@@ -179,7 +184,7 @@ export async function proposeMappings(
   const worker = async () => {
     for (;;) {
       if (stopped) return;
-      if (opts.maxCostCents != null && report.costCents >= opts.maxCostCents) {
+      if (maxCostCents != null && report.costCents >= maxCostCents) {
         stopped = true;
         return;
       }

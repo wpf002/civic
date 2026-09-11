@@ -21,6 +21,7 @@
  */
 import { z } from "zod";
 import { prisma } from "@civic/db";
+import { DEFAULT_MAX_COST_CENTS } from "./pipeline-db.js";
 import { MODEL_B, complete, type CompleteFn } from "./llm.js";
 
 /** Deliberately the OTHER model. An auditor that is the verifier grades its own work. */
@@ -130,11 +131,15 @@ export interface AuditOptions {
   complete?: CompleteFn;
   concurrency?: number;
   contextChars?: number;
-  /** Stop once the run has spent this many cents. */
-  maxCostCents?: number;
+  /** Stop once the run has spent this many cents. Omitted = DEFAULT_MAX_COST_CENTS; null = uncapped, deliberately. */
+  maxCostCents?: number | null;
 }
 
 export async function auditPublished(opts: AuditOptions = {}): Promise<AuditReport> {
+  // Default here, not only in the CLI: a caller that never mentions a budget
+  // must get one anyway. See DEFAULT_MAX_COST_CENTS.
+  const maxCostCents =
+    opts.maxCostCents === undefined ? DEFAULT_MAX_COST_CENTS : opts.maxCostCents;
   const model = opts.model ?? AUDIT_MODEL;
   const fn = opts.complete ?? complete;
   const size = opts.size ?? 60;
@@ -194,7 +199,7 @@ export async function auditPublished(opts: AuditOptions = {}): Promise<AuditRepo
   const worker = async () => {
     for (;;) {
       if (stopped) return;
-      if (opts.maxCostCents != null && report.costCents >= opts.maxCostCents) {
+      if (maxCostCents != null && report.costCents >= maxCostCents) {
         stopped = true;
         return;
       }

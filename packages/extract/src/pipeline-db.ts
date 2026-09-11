@@ -21,6 +21,15 @@ import { prisma } from "@civic/db";
 import { MODEL_A, MODEL_B, ModelRefusalError, type CompleteFn } from "./llm.js";
 import { extractOnce, reconcile } from "./pipeline.js";
 
+/**
+ * What a run may spend when nobody said otherwise, in cents.
+ *
+ * This is the floor for every entry point, not just the CLI's flag default, so
+ * that forgetting a budget costs $5 rather than the account balance. Raise it
+ * per run with --max-cost; pass null in code to opt out deliberately.
+ */
+export const DEFAULT_MAX_COST_CENTS = 500;
+
 /** Thrown to stop a run dead rather than repeat a failure hundreds of times. */
 export class FatalRunError extends Error {
   constructor(message: string) {
@@ -49,8 +58,12 @@ export interface RunOptions {
    * same answer.
    */
   force?: boolean;
-  /** Stop once the run has spent this many cents. */
-  maxCostCents?: number;
+  /**
+   * Stop once the run has spent this many cents. Omit it and you get
+   * DEFAULT_MAX_COST_CENTS — a forgotten budget must not mean an unlimited one.
+   * Pass `null` to run uncapped, which has to be a decision someone typed.
+   */
+  maxCostCents?: number | null;
   /** Cap how many sources are processed in a run. */
   limit?: number;
   modelA?: string;
@@ -144,6 +157,12 @@ export async function estimateRunCost(
 }
 
 export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
+  // `??` not `||`, and resolved here rather than read off opts at the check:
+  // the CLI has always defaulted this, but a caller that never mentions a
+  // budget — a script, an agent, a REPL — used to get no cap at all. Runs on
+  // 2026-09-09 spent $8.74 and $23.71 that way, hours after --max-cost was
+  // added, because the default lived in the CLI instead of down here.
+  const maxCostCents = opts.maxCostCents === undefined ? DEFAULT_MAX_COST_CENTS : opts.maxCostCents;
   const modelA = opts.modelA ?? MODEL_A;
   const modelB = opts.modelB ?? MODEL_B;
   if (modelA === modelB) {
@@ -215,7 +234,7 @@ export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
       if (fatal) return;
       // A budget is a stop, not a warning. Without it a mistyped command spends
       // whatever is in the account.
-      if (opts.maxCostCents != null && report.costCents >= opts.maxCostCents) {
+      if (maxCostCents != null && report.costCents >= maxCostCents) {
         fatal ??= new FatalRunError(
           `stopped at ${report.costCents.toFixed(2)}c, the --max-cost limit. ` +
             `${queue.length} sources were not processed.`,
