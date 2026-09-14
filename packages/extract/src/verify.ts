@@ -95,10 +95,23 @@ Apply these rules exactly.
    Ask: could a candidate agree with this quote and still disagree with the proposition? If yes,
    the quote does not establish the stance. Failure: WRONG_ISSUE.
 
-3. Direction is decided by what the candidate would DO, not by the tone of the sentence. "I will fight to
-   stop the tax increase" is OPPOSE on raising taxes, however energetic it sounds. Enthusiasm is not
-   support. Be especially careful here: an affirmative sentence very often expresses opposition to
-   something. Failure: WRONG_DIRECTION.
+3. Direction is read AGAINST THE PROPOSITION, never against the subject of the quote. First restate
+   what the quote wants in the proposition's own terms, then compare.
+
+   Proposition: "Raise tax rates or create new taxes."
+     "I supported extending the tax cuts"        -> wants taxes lower  -> OPPOSE
+     "I will fight to stop the tax increase"     -> wants taxes lower  -> OPPOSE
+     "Corporations must pay their fair share"    -> wants taxes higher -> SUPPORT
+
+   The quote being positive about something does not make the stance SUPPORT. "Proud to support the
+   tax cut" is an enthusiastic endorsement of the opposite of the proposition. A verifier that reads
+   the quote's own subject as the direction will reject correct positions from one side of every
+   question whose proposition is phrased as a change that side opposes — which tilts the guide and
+   is the one outcome this check exists to prevent.
+
+   Before failing a stance for WRONG_DIRECTION, write out in your reasoning what the quote wants in
+   the proposition's terms. If that agrees with the stance recorded, it is not a direction error.
+   Failure: WRONG_DIRECTION.
 
 4. Strength is a commitment, not a volume. STRONG_SUPPORT and STRONG_OPPOSE require an unconditional
    commitment to act — "I will vote to X". A preference, a value, or a qualified statement is SUPPORT or
