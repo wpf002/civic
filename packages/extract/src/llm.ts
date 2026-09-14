@@ -157,3 +157,22 @@ export const complete: CompleteFn = async <T>(req: CompleteRequest<T>): Promise<
     costCents: estimateCostCents(res.model, res.usage),
   };
 };
+
+/**
+ * Exact input tokens for a request, without running it.
+ *
+ * Token counting is free, so a cost estimate can use the real count of what would be
+ * sent rather than a characters-divided-by-four guess. Built from the same system,
+ * messages, thinking and output format as `complete`, so the count matches what the
+ * real call would be billed for on the input side.
+ */
+export async function countInputTokens<T>(req: CompleteRequest<T>): Promise<number> {
+  const res = await getClient().beta.messages.countTokens({
+    model: req.model,
+    thinking: { type: "adaptive" },
+    system: [{ type: "text", text: req.system }],
+    messages: [{ role: "user", content: req.input }],
+    output_config: { format: betaZodOutputFormat(req.schema) },
+  });
+  return res.input_tokens;
+}

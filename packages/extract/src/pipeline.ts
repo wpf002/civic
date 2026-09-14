@@ -37,7 +37,7 @@ export interface ExtractOutcome {
 }
 
 /** Show the model the actual question, not the topic name. */
-function renderInput(input: ExtractInput): string {
+export function renderInput(input: ExtractInput): string {
   const list = input.propositions?.length
     ? input.propositions
         .map(
