@@ -301,3 +301,16 @@ describe("not spending money twice", () => {
     expect(r.costCents).toBeGreaterThan(500);
   });
 });
+
+describe("one answer per candidate and question", () => {
+  it("does not record a second absence when one is already known", async () => {
+    // Extraction runs per source. A candidate with nine archived pages got nine
+    // "no stated position" rows for one question, and all nine went live.
+    await runExtraction({ sourceId, complete: replay([]) });
+    const first = await prisma.position.count({ where: { candidateId, stance: "NO_STATED_POSITION" } });
+    await runExtraction({ sourceId, force: true, complete: replay([]) });
+    const second = await prisma.position.count({ where: { candidateId, stance: "NO_STATED_POSITION" } });
+    expect(first).toBeGreaterThan(0);
+    expect(second).toBe(first);
+  });
+});

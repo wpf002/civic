@@ -164,10 +164,12 @@ export async function auditPublished(opts: AuditOptions = {}): Promise<AuditRepo
       candidate: {
         select: {
           fullName: true,
-          // Sources hang off the candidate, not the position. An absence has no
-          // evidence row by definition, so the document it was decided from is
-          // reached this way.
-          sources: { select: { url: true, text: true }, take: 1, where: { NOT: { text: "" } } },
+          // EVERY archived document for the candidate, not the first. An absence is a
+          // claim that the candidate said nothing on this question anywhere we read,
+          // and auditing it against one page — usually the homepage — measured it
+          // against the wrong evidence. Texas had 16 published absences contradicted
+          // by a policy page the audit never looked at, and the audit reported 0%.
+          sources: { select: { url: true, text: true }, where: { NOT: { text: "" } } },
         },
       },
       issue: { select: { slug: true } },
@@ -212,7 +214,8 @@ export async function auditPublished(opts: AuditOptions = {}): Promise<AuditRepo
       // wrong absence tells a voter a candidate is silent when they are not, which is
       // a claim about the candidate and not about our coverage.
       if (!ev) {
-        const doc = p.candidate?.sources?.[0];
+        const docs = p.candidate?.sources ?? [];
+        const doc = docs[0];
         if (!doc?.text) {
           report.sampled++;
           report.faults.NO_SOURCE = (report.faults.NO_SOURCE ?? 0) + 1;
@@ -225,7 +228,9 @@ export async function auditPublished(opts: AuditOptions = {}): Promise<AuditRepo
             input:
               `QUESTION: ${p.proposition?.text ?? p.issue.slug}\n\n` +
               `PUBLISHED CLAIM: this candidate has not stated a position on it.\n\n` +
-              `THE ARCHIVED DOCUMENT:\n"""\n${doc.text.slice(0, 12000)}\n"""`,
+              docs
+                .map((d, i) => `ARCHIVED DOCUMENT ${i + 1} of ${docs.length} (${d.url}):\n"""\n${d.text.slice(0, 8000)}\n"""`)
+                .join("\n\n"),
             schema: FindingSchema,
           });
           report.costCents += res.costCents;

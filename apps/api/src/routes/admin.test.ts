@@ -445,3 +445,49 @@ describe("publishing a batch", () => {
     expect(res.json().published).toBe(0);
   });
 });
+
+describe("publishing over a live answer", () => {
+  it("supersedes the published absence instead of leaving two answers live", async () => {
+    // Re-verifying a wrongly rejected stance for a candidate who already showed
+    // "no stated position" would otherwise put both on the page at once.
+    const issue = await prisma.issue.findFirstOrThrow();
+    const cand = await prisma.candidate.create({ data: { slug: `${PREFIX}supersede`, fullName: "ZZ Supersede" } });
+    const absence = await prisma.position.create({
+      data: { candidateId: cand.id, issueId: issue.id, stance: "NO_STATED_POSITION", summary: "none", confidence: 0.9, status: "PUBLISHED", publishedAt: new Date() },
+    });
+    const stance = await prisma.position.create({
+      data: { candidateId: cand.id, issueId: issue.id, stance: "NO_STATED_POSITION", summary: "a later read", confidence: 0.9, status: "IN_REVIEW" },
+    });
+
+    const res = await app.inject({ method: "POST", url: "/admin/positions/publish-batch", headers: AUTH, payload: { ids: [stance.id] } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().superseded).toBe(1);
+
+    const live = await prisma.position.findMany({ where: { candidateId: cand.id, issueId: issue.id, status: "PUBLISHED" } });
+    expect(live.map((l) => l.id)).toEqual([stance.id]);
+    expect(live[0]!.supersedesId).toBe(absence.id);
+    // The old row stays, marked, never edited or deleted — the corrections log needs it.
+    expect((await prisma.position.findUniqueOrThrow({ where: { id: absence.id } })).status).toBe("SUPERSEDED");
+    expect((await prisma.position.findUniqueOrThrow({ where: { id: absence.id } })).summary).toBe("none");
+  });
+});
+
+describe("silence does not replace something said", () => {
+  it("refuses to publish an absence over a live stance", async () => {
+    // A stance read from one page and silence read from another are not in conflict:
+    // the candidate stated a position somewhere we looked.
+    const issue = await prisma.issue.findFirstOrThrow();
+    const cand = await prisma.candidate.create({ data: { slug: `${PREFIX}silence`, fullName: "ZZ Silence" } });
+    const stance = await prisma.position.create({
+      data: { candidateId: cand.id, issueId: issue.id, stance: "SUPPORT", summary: "said it", confidence: 0.9, status: "PUBLISHED", publishedAt: new Date() },
+    });
+    const absence = await prisma.position.create({
+      data: { candidateId: cand.id, issueId: issue.id, stance: "NO_STATED_POSITION", summary: "none on this page", confidence: 0.9, status: "IN_REVIEW" },
+    });
+
+    await app.inject({ method: "POST", url: "/admin/positions/publish-batch", headers: AUTH, payload: { ids: [absence.id] } });
+
+    expect((await prisma.position.findUniqueOrThrow({ where: { id: stance.id } })).status).toBe("PUBLISHED");
+    expect((await prisma.position.findUniqueOrThrow({ where: { id: absence.id } })).status).toBe("REJECTED");
+  });
+});

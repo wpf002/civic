@@ -109,8 +109,21 @@ Apply these rules exactly.
    question whose proposition is phrased as a change that side opposes — which tilts the guide and
    is the one outcome this check exists to prevent.
 
-   Before failing a stance for WRONG_DIRECTION, write out in your reasoning what the quote wants in
-   the proposition's terms. If that agrees with the stance recorded, it is not a direction error.
+   The same holds when the proposition is itself worded as a stop, a bar or an end:
+
+   Proposition: "Stop offering tax reductions or cash payments to individual companies."
+     "STOP corporate welfare and subsidies"      -> wants that to happen -> SUPPORT
+     "We must keep incentives to attract jobs"   -> wants it not to      -> OPPOSE
+
+   Proposition: "Bar government agencies from using race or sex when hiring."
+     "AGAINST DEI mandates in federal agencies"  -> wants the bar        -> SUPPORT
+
+   Do not compare the quote to the TOPIC of the proposition. Compare it to the literal sentence.
+   Ask exactly this: does the candidate want THIS SENTENCE, as written, to become true? Yes is
+   SUPPORT. No is OPPOSE. A candidate saying "stop X" agrees with a proposition that says "stop X".
+
+   Before failing a stance for WRONG_DIRECTION, write out in your reasoning your yes-or-no answer to
+   that question. If it agrees with the stance recorded, it is not a direction error.
    Failure: WRONG_DIRECTION.
 
 4. Strength is a commitment, not a volume. STRONG_SUPPORT and STRONG_OPPOSE require an unconditional
@@ -125,6 +138,36 @@ Never use party, endorsements, the candidate's other statements, or what similar
 the quote. You are not deciding whether the position is good, popular, or correct — only whether the
 candidate stated it.`;
 
+/**
+ * What the verifier is shown. One builder, so the first read and the confirming read
+ * cannot be given different information.
+ *
+ * The proposition leads. It is the sentence a stance answers, and direction is only
+ * defined against it.
+ */
+function verifierInput(
+  p: {
+    stance: string;
+    issue: { name: string; slug: string; description: string };
+    proposition: { text: string; yesMeans: string; noMeans: string } | null;
+  },
+  quote: string,
+): string {
+  const question = p.proposition
+    ? `PROPOSITION: ${p.proposition.text}\n` +
+      `  agreeing means: ${p.proposition.yesMeans}\n` +
+      `  disagreeing means: ${p.proposition.noMeans}\n\n`
+    : "";
+  return (
+    question +
+    `ISSUE: ${p.issue.name} (${p.issue.slug})\n` +
+    `WHAT THIS ISSUE COVERS: ${p.issue.description}\n\n` +
+    `STANCE ASSIGNED: ${p.stance}\n` +
+    `(SUPPORT means the candidate wants the proposition sentence to become true. OPPOSE means they do not.)\n\n` +
+    `QUOTE, verbatim from the candidate's own document:\n"""\n${quote}\n"""`
+  );
+}
+
 export interface VerifyOptions {
   electionSlug?: string;
   limit?: number;
@@ -134,6 +177,8 @@ export interface VerifyOptions {
   concurrency?: number;
   /** Stop once the run has spent this many cents. Defaults are set by the CLI. */
   maxCostCents?: number;
+  /** Tests only. Production always confirms a direction rejection. */
+  skipDirectionConfirmation?: boolean;
 }
 
 export interface VerifyReport {
@@ -148,6 +193,8 @@ export interface VerifyReport {
   examples: Array<{ candidate: string; issue: string; was: string; failure: string; reason: string; quote: string }>;
   /** What actually went wrong, so an error count is never just a number. */
   errors: string[];
+  /** Direction rejections a second verifier did not confirm, and which therefore stood. */
+  directionOverruled?: number;
 }
 
 const tally = (rows: Array<{ stance: string }>) => {
@@ -177,6 +224,12 @@ export async function runVerification(opts: VerifyOptions = {}): Promise<VerifyR
     include: {
       candidate: { select: { fullName: true } },
       issue: { select: { slug: true, name: true, description: true } },
+      // The question the stance answers. The verifier ran for weeks without it, shown
+      // only the issue's topic description, so it could only compare a quote against a
+      // topic — which is exactly how "supports tax cuts" became SUPPORT on a
+      // proposition to raise taxes, and "STOP corporate welfare" became OPPOSE on a
+      // proposition to stop it.
+      proposition: { select: { text: true, yesMeans: true, noMeans: true } },
       evidence: { select: { quote: true } },
     },
     orderBy: { capturedAt: "asc" },
@@ -233,10 +286,7 @@ export async function runVerification(opts: VerifyOptions = {}): Promise<VerifyR
           model,
           system: VERIFY_SYSTEM,
           input:
-            `ISSUE: ${p.issue.name} (${p.issue.slug})\n` +
-            `WHAT THIS ISSUE COVERS: ${p.issue.description}\n\n` +
-            `STANCE ASSIGNED: ${p.stance}\n\n` +
-            `QUOTE, verbatim from the candidate's own document:\n"""\n${quote}\n"""`,
+            verifierInput(p, quote),
           schema: VerdictSchema,
         });
         report.costCents += res.costCents;
@@ -253,6 +303,46 @@ export async function runVerification(opts: VerifyOptions = {}): Promise<VerifyR
             });
           }
           continue;
+        }
+
+        // A direction verdict overrules two independent extractors that already agreed
+        // on direction. Measured across the first two states, 7 of 9 such rejections
+        // were the verifier's own polarity error — reading a quote's subject as its
+        // direction, then misreading a proposition worded as a negation. So a lone
+        // WRONG_DIRECTION does not stand: a second verifier on the other model has to
+        // reach the same verdict independently, or the position is upheld.
+        if (v.failure === "WRONG_DIRECTION" && !opts.skipDirectionConfirmation) {
+          const confirmModel = model === MODEL_A ? MODEL_B : MODEL_A;
+          try {
+            const second = await fn({
+              model: confirmModel,
+              system: VERIFY_SYSTEM,
+              input: verifierInput(p, quote),
+              schema: VerdictSchema,
+            });
+            report.costCents += second.costCents;
+            if (second.output.upheld || second.output.failure !== "WRONG_DIRECTION") {
+              report.upheld++;
+              report.directionOverruled = (report.directionOverruled ?? 0) + 1;
+              survivors.push({ stance: p.stance });
+              if (!opts.dryRun) {
+                await prisma.position.update({
+                  where: { id: p.id },
+                  data: { status: "IN_REVIEW", reviewedBy: `verifier:${model}+${confirmModel}`, reviewedAt: new Date() },
+                });
+              }
+              continue;
+            }
+          } catch {
+            // If the confirmation cannot run, the rejection does not get the benefit
+            // of the doubt either: the position goes to a person.
+            if (!opts.dryRun) {
+              await prisma.reviewTask.create({
+                data: { kind: "POSITION", targetId: p.id, reason: `Direction rejection could not be confirmed for ${p.candidate?.fullName ?? "unknown"} on "${p.issue.slug}". A person should decide.` },
+              });
+            }
+            continue;
+          }
         }
 
         report.rejected++;

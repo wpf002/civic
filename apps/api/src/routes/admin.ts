@@ -293,15 +293,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    return prisma.position.update({
-      where: { id },
-      data: {
-        status: "PUBLISHED",
-        reviewedBy: who,
-        reviewedAt: new Date(),
-        publishedAt: new Date(),
-      },
-    });
+    return publishSuperseding(position, who);
   });
 
   /**
@@ -341,13 +333,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       publishable.push(p.id);
     }
 
-    const now = new Date();
-    const result = await prisma.position.updateMany({
-      where: { id: { in: publishable } },
-      data: { status: "PUBLISHED", reviewedBy: who, reviewedAt: now, publishedAt: now },
-    });
+    let published = 0;
+    let superseded = 0;
+    for (const id of publishable) {
+      const p = rows.find((r) => r.id === id)!;
+      const r = await publishSuperseding(p, who);
+      published++;
+      if (r.supersedesId) superseded++;
+    }
 
-    return { ok: true, published: result.count, refused, requested: body.ids.length };
+    return { ok: true, published, superseded, refused, requested: body.ids.length };
   });
 
   app.post("/positions/:id/reject", async (req, reply) => {
@@ -660,4 +655,60 @@ function readEntries(payload: unknown): Array<{
 }> {
   const entries = (payload as { entries?: unknown })?.entries;
   return Array.isArray(entries) ? entries : [];
+}
+
+/**
+ * Publish a position, superseding whatever is already live for the same question.
+ *
+ * Publishing used to flip the row's status and nothing else, which assumed nothing
+ * else was live for that candidate and question. That held while the extractor
+ * refused to draft over a published row, and broke the first time a rejected stance
+ * was re-verified: the candidate would have shown "no stated position" and a stance
+ * on the same question at once.
+ *
+ * A published row is never edited. The new row points at it with supersedesId and the
+ * old one is marked SUPERSEDED, in one transaction, so the corrections log can show
+ * both and there is never a moment with two live answers.
+ */
+async function publishSuperseding(
+  position: { id: string; candidateId: string; issueId: string },
+  who: string,
+) {
+  return prisma.$transaction(async (tx) => {
+    const live = await tx.position.findFirst({
+      where: {
+        candidateId: position.candidateId,
+        issueId: position.issueId,
+        status: "PUBLISHED",
+        id: { not: position.id },
+      },
+    });
+    const now = new Date();
+    const SILENT = ["NO_STATED_POSITION", "DECLINED_TO_STATE"];
+    const incoming = await tx.position.findUniqueOrThrow({ where: { id: position.id } });
+
+    // Silence never replaces something said. An absence read from one page does not
+    // contradict a stance read from another — the candidate stated a position
+    // somewhere we looked, so "no stated position" would be false about them.
+    if (live && SILENT.includes(incoming.stance) && !SILENT.includes(live.stance)) {
+      return tx.position.update({
+        where: { id: position.id },
+        data: { status: "REJECTED", reviewedBy: who, reviewedAt: now },
+      });
+    }
+
+    if (live) {
+      await tx.position.update({ where: { id: live.id }, data: { status: "SUPERSEDED" } });
+    }
+    return tx.position.update({
+      where: { id: position.id },
+      data: {
+        status: "PUBLISHED",
+        reviewedBy: who,
+        reviewedAt: now,
+        publishedAt: now,
+        ...(live ? { supersedesId: live.id } : {}),
+      },
+    });
+  });
 }

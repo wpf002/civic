@@ -427,16 +427,44 @@ async function writeDraft(
   const issue = await prisma.issue.findUnique({ where: { slug: p.issueSlug } });
   if (!issue || !source.candidateId) return false;
 
+  const isAbsenceDraft = p.stance === "NO_STATED_POSITION" || p.stance === "DECLINED_TO_STATE";
+
+  // Extraction runs once per SOURCE, but a position belongs to a candidate and a
+  // question. Without this, a candidate with nine archived pages got nine "no stated
+  // position" rows for the same question, and publishing put all nine live — 2,038
+  // questions with several live answers before this was caught.
+  //
+  // An absence is only worth recording once, and only if nothing is known yet: silence
+  // on this page does not contradict a stance found on another. A stance is recorded
+  // unless the same stance is already pending or live.
+  const known = await prisma.position.findMany({
+    where: {
+      candidateId: source.candidateId,
+      issueId: issue.id,
+      status: { in: ["DRAFT", "IN_REVIEW", "PUBLISHED"] },
+    },
+    select: { stance: true, status: true },
+  });
+  if (isAbsenceDraft && known.length > 0) return false;
+  if (!isAbsenceDraft && known.some((k) => k.stance === p.stance && k.status !== "PUBLISHED")) return false;
+
   const existing = await prisma.position.findFirst({
     where: { candidateId: source.candidateId, issueId: issue.id, status: "PUBLISHED" },
   });
-  if (existing) {
+  // A published absence is what a stance found on a later page is supposed to
+  // replace, so it does not block drafting. The publish step supersedes it.
+  const blocking =
+    existing &&
+    !["NO_STATED_POSITION", "DECLINED_TO_STATE"].includes(existing.stance)
+      ? existing
+      : null;
+  if (blocking) {
     // Never update a published row. A change is a new row with supersedesId, decided
     // by a person in the review console.
     await prisma.reviewTask.create({
       data: {
         kind: "POSITION",
-        targetId: existing.id,
+        targetId: blocking.id,
         reason:
           `Re-extraction of ${source.url} produced ${p.stance} for "${p.issueSlug}", but a ` +
           `published position already exists. A correction must supersede, not overwrite.`,
