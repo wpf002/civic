@@ -16,7 +16,7 @@
  *
  * Basis is FILED. Minnesota publishes the filing list; a primary loser still appears.
  */
-import { nameKey, type Roster, type RosterEntry } from "../roster.js";
+import { nameKey, normalizeParty, type Roster, type RosterEntry } from "../roster.js";
 
 export const MN_BASE = "https://electionresultsfiles.sos.state.mn.us";
 export const candUrl = (date: string) => `${MN_BASE}/${date}/cand.txt`;
@@ -99,6 +99,7 @@ export function raceKeyForOffice(officeName: string): string | null {
   const house = o.match(/^U\.?S\.? REPRESENTATIVE DISTRICT (\d{1,2})$/);
   if (house) return `us-house-mn-${String(Number(house[1])).padStart(2, "0")}`;
   if (/^U\.?S\.? SENATOR$/.test(o)) return "us-senate-mn";
+  if (o === "GOVERNOR & LT GOVERNOR") return "governor-mn";
   return null;
 }
 
@@ -122,7 +123,11 @@ export function toRosters(rows: MnCandidate[], observedAt: Date, sourceUrl: stri
       unmapped.set(c.officeName, (unmapped.get(c.officeName) ?? 0) + 1);
       continue;
     }
-    const name = c.name.replace(/\s+/g, " ").trim();
+    // A governor's line is the ticket: "Amy Klobuchar and Ben Schierer". The race is
+    // for governor, so the candidate is the first name; the running mate is not a
+    // separate candidate for it.
+    const ticket = raceKey.startsWith("governor-") ? c.name.split(/\s+and\s+/i)[0]! : c.name;
+    const name = ticket.replace(/\s+/g, " ").trim();
     const key = nameKey(name);
     const race = byRace.get(raceKey) ?? new Map<string, RosterEntry>();
     if (!race.has(key)) {
@@ -135,6 +140,7 @@ export function toRosters(rows: MnCandidate[], observedAt: Date, sourceUrl: stri
         // quarantines rather than gaining a candidate called "WRITE-IN".
         isPlaceholder: c.isWriteIn,
         externalIds: { mnsos: c.candidateId },
+        party: normalizeParty(c.party),
         sourceUrl,
       });
     }

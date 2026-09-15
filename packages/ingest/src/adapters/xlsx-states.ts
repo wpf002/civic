@@ -14,10 +14,10 @@
  * Both are FILED, not certified.
  */
 import { readXlsx } from "../xlsx.js";
-import { nameKey, type Roster, type RosterEntry } from "../roster.js";
+import { nameKey, normalizeParty, type Roster, type RosterEntry } from "../roster.js";
 
 export const ME_URL =
-  "https://www.maine.gov/sos/sites/maine.gov.sos/files/inline-files/2026%20General%20Candidate%20List%20-%20posting.xlsx";
+  "https://www.maine.gov/sos/sites/maine.gov.sos/files/inline-files/2026%20General%20Candidate%20List%20-%20FINAL.xlsx";
 export const CO_URL =
   "https://www.sos.state.co.us/pubs/elections/vote/files/2026/2026GeneralCandidateListOfficial.xlsx";
 
@@ -85,6 +85,7 @@ export function parseColorado(rows: string[][]): StateCandidate[] {
 export function raceKeyMaine(office: string, district: string | null): string | null {
   const o = office.trim().toUpperCase();
   if (o === "US") return "us-senate-me";
+  if (o === "GOV") return "governor-me";
   if (o === "CG" && district) return `us-house-me-${String(Number(district)).padStart(2, "0")}`;
   return null;
 }
@@ -92,6 +93,8 @@ export function raceKeyMaine(office: string, district: string | null): string | 
 export function raceKeyColorado(office: string, district: string | null): string | null {
   const o = office.trim().toUpperCase();
   if (o === "US SENATE") return "us-senate-co";
+  // Exactly GOVERNOR. "LT. GOVERNOR" is its own office on this list.
+  if (o === "GOVERNOR") return "governor-co";
   if (o.startsWith("US HOUSE") || o.startsWith("REPRESENTATIVE TO THE")) {
     const d = district ?? o.match(/(\d+)/)?.[1];
     if (d) return `us-house-co-${String(Number(d)).padStart(2, "0")}`;
@@ -118,7 +121,7 @@ export function toRosters(
     const key = nameKey(c.name);
     const race = byRace.get(raceKey) ?? new Map<string, RosterEntry>();
     if (!race.has(key)) {
-      race.set(key, { key, name: c.name, sourceName: c.name, isWriteIn: c.isWriteIn, sourceUrl });
+      race.set(key, { key, name: c.name, sourceName: c.name, isWriteIn: c.isWriteIn, party: normalizeParty(c.party), sourceUrl });
     }
     byRace.set(raceKey, race);
   }
@@ -142,13 +145,33 @@ export function toRosters(
   };
 }
 
+/** Maine's index page for the election, which links the current revision of the list. */
+export const ME_INDEX = "https://www.maine.gov/sos/elections-voting/upcoming-elections";
+
+/**
+ * Maine renames the file on every revision ("- posting", then "- FINAL"), so the
+ * link is read from the index page rather than kept here. Falls back to the last
+ * known name only when the page cannot be read.
+ */
+export async function currentMaineUrl(fetchImpl: typeof fetch = fetch): Promise<string> {
+  try {
+    const res = await fetchImpl(ME_INDEX, { redirect: "follow" });
+    if (!res.ok) return ME_URL;
+    const html = await res.text();
+    const href = html.match(/href="([^"]*2026%20General%20Candidate%20List[^"]*\.xlsx)"/i)?.[1];
+    return href ? new URL(href, ME_INDEX).toString() : ME_URL;
+  } catch {
+    return ME_URL;
+  }
+}
+
 export async function fetchStateRoster(
   state: "ME" | "CO",
   observedAt: Date,
   opts: { fetchImpl?: typeof fetch; url?: string } = {},
 ): Promise<StateRosterRun> {
   const fetchImpl = opts.fetchImpl ?? fetch;
-  const url = opts.url ?? (state === "ME" ? ME_URL : CO_URL);
+  const url = opts.url ?? (state === "ME" ? await currentMaineUrl(fetchImpl) : CO_URL);
   const res = await fetchImpl(url, { redirect: "follow" });
   if (!res.ok) throw new Error(`${state} returned ${res.status} for its candidate list`);
 

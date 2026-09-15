@@ -19,7 +19,7 @@
  * and email. None of that is needed to say where someone stands, so it is dropped in
  * `stripPii` before anything else reads a row — same rule as the Texas adapter.
  */
-import { nameKey, type Roster, type RosterEntry } from "../roster.js";
+import { nameKey, normalizeParty, type Roster, type RosterEntry } from "../roster.js";
 
 export const NC_FILING_INDEX = "https://s3.amazonaws.com/dl.ncsbe.gov/Elections/2026/Candidate%20Filing/";
 export const NC_CANDIDATE_CSV = `${NC_FILING_INDEX}Candidate_Listing_2026.csv`;
@@ -137,7 +137,7 @@ export function toRosters(rows: NcCandidate[], electionDate: string, observedAt:
       // The same person in another county's copy of a statewide contest.
       collapsedRows++;
     } else {
-      race.set(key, { key, name, sourceName: r.ballotName, sourceUrl: NC_CANDIDATE_CSV });
+      race.set(key, { key, name, sourceName: r.ballotName, party: normalizeParty(r.party), sourceUrl: NC_CANDIDATE_CSV });
     }
     byRace.set(raceKey, race);
   }

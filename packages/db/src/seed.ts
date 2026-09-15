@@ -263,6 +263,10 @@ async function main() {
   }
   for (const [name, abbreviation] of [
     ["Democratic", "D"], ["Republican", "R"], ["Libertarian", "L"], ["Green", "G"], ["Independent", "I"], ["Nonpartisan", "NP"],
+    // Parties on 2026 state ballots beyond the five above.
+    ["Constitution", "CON"], ["American Constitution", "ACN"], ["Forward", "FWD"], ["Unity", "UNI"],
+    ["Approval Voting", "AVP"], ["Working Families", "WF"], ["Conservative", "CRV"], ["Alliance", "ALL"],
+    ["Legal Marijuana Now", "LMN"], ["Socialism and Liberation", "PSL"], ["No Labels", "NL"],
   ] as const) {
     await prisma.party.upsert({ where: { abbreviation }, update: {}, create: { name, abbreviation } });
   }

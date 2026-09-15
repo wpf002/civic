@@ -15,7 +15,7 @@
  *
  * Basis is FILED.
  */
-import { nameKey, type Roster, type RosterEntry } from "../roster.js";
+import { nameKey, normalizeParty, type Roster, type RosterEntry } from "../roster.js";
 
 export const SD_URL = "https://vip.sdsos.gov/candidatelist.aspx";
 export const NOVEMBER_2026_EID = "774";
@@ -72,6 +72,7 @@ export function parseSdTable(html: string): SdCandidate[] {
 export function raceKeyForOffice(office: string): string | null {
   const o = office.toUpperCase().replace(/\s+/g, " ").trim();
   if (/^UNITED STATES SENATOR$/.test(o)) return "us-senate-sd";
+  if (o === "GOVERNOR AND LIEUTENANT GOVERNOR" || o === "GOVERNOR") return "governor-sd";
   // South Dakota has one at-large congressional district.
   if (/^(UNITED STATES )?REPRESENTATIVE( IN CONGRESS)?$/.test(o)) return "us-house-sd-01";
   return null;
@@ -106,7 +107,7 @@ export function toRosters(rows: SdCandidate[], sourceUrl: string, observedAt: Da
     }
     const key = nameKey(c.name);
     const race = byRace.get(raceKey) ?? new Map<string, RosterEntry>();
-    if (!race.has(key)) race.set(key, { key, name: c.name, sourceName: c.name, sourceUrl });
+    if (!race.has(key)) race.set(key, { key, name: c.name, sourceName: c.name, party: normalizeParty(c.party), sourceUrl });
     byRace.set(raceKey, race);
   }
 

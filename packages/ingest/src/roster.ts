@@ -223,3 +223,59 @@ export function normalizeForHash(html: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+/**
+ * A state's own spelling of a party, as the abbreviation the Party table uses.
+ *
+ * States write the same party a dozen ways: "Democratic Party", "DEM", "DFL"
+ * (Minnesota's Democratic party). A spelling not listed returns the source's own
+ * text unchanged, which resolves to no Party row, so an unknown party shows as
+ * blank rather than as a guess.
+ */
+const PARTY_SPELLINGS: Record<string, string> = {
+  D: "D", DEM: "D", DEMOCRAT: "D", DEMOCRATIC: "D", "DEMOCRATIC PARTY": "D", DFL: "D",
+  "DEMOCRATIC-FARMER-LABOR": "D",
+  R: "R", REP: "R", REPUBLICAN: "R", "REPUBLICAN PARTY": "R", GOP: "R",
+  L: "L", LIB: "L", LP: "L", LIBERTARIAN: "L", "LIBERTARIAN PARTY": "L",
+  G: "G", GRN: "G", GP: "G", GREEN: "G", "GREEN PARTY": "G",
+  I: "I", IND: "I", INDEPENDENT: "I", UNAFFILIATED: "I", UNA: "I", NPA: "I", "NO PARTY AFFILIATION": "I",
+  CON: "CON", CONSTITUTION: "CON", "CONSTITUTION PARTY": "CON",
+  ACN: "ACN", "AMERICAN CONSTITUTION PARTY": "ACN",
+  FWD: "FWD", FORWARD: "FWD", "FORWARD PARTY": "FWD",
+  UNI: "UNI", UNITY: "UNI", "UNITY PARTY": "UNI",
+  AVP: "AVP", "APPROVAL VOTING PARTY": "AVP",
+  WF: "WF", WFP: "WF", "WORKING FAMILIES": "WF", "WORKING FAMILIES PARTY": "WF",
+  CRV: "CRV", CONSERVATIVE: "CRV", "CONSERVATIVE PARTY": "CRV",
+  LMN: "LMN", "LEGAL MARIJUANA NOW": "LMN", "LEGAL MARIJUANA NOW PARTY": "LMN",
+  PSL: "PSL", "PARTY FOR SOCIALISM AND LIBERATION": "PSL",
+  NL: "NL", "NO LABELS": "NL", "NO LABELS PARTY": "NL",
+};
+
+export function normalizeParty(raw: string | null | undefined): string | null {
+  const t = (raw ?? "").trim();
+  if (!t) return null;
+  return PARTY_SPELLINGS[t.toUpperCase().replace(/\s+/g, " ")] ?? t;
+}
+
+/**
+ * Whether a state's list is its general-election ballot rather than its filing list.
+ *
+ * The structural test: on a general ballot no party has two candidates for one seat,
+ * because the primary picked one. A filing list before the primary fails it in almost
+ * every contested race. Write-ins and independents are left out of the test, since
+ * any number of either can appear on a real ballot.
+ */
+export function isGeneralBallot(rosters: Roster[]): boolean {
+  if (rosters.length === 0) return false;
+  for (const r of rosters) {
+    const seen = new Set<string>();
+    for (const e of r.entries) {
+      if (e.isWriteIn || e.isPlaceholder) continue;
+      const party = normalizeParty(e.party);
+      if (!party || party === "I") continue;
+      if (seen.has(party)) return false;
+      seen.add(party);
+    }
+  }
+  return true;
+}

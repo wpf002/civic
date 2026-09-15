@@ -62,7 +62,8 @@ describe("rosters", () => {
   it("maps South Dakota's at-large seat", () => {
     expect(raceKeyForOffice("United States Senator")).toBe("us-senate-sd");
     expect(raceKeyForOffice("Representative in Congress")).toBe("us-house-sd-01");
-    expect(raceKeyForOffice("Governor")).toBeNull();
+    expect(raceKeyForOffice("Governor and Lieutenant Governor")).toBe("governor-sd");
+    expect(raceKeyForOffice("Lieutenant Governor")).toBeNull();
   });
 
   it("reports offices it does not model rather than dropping them", () => {

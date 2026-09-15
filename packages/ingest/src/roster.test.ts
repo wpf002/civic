@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diffRoster, nameKey, normalizeForHash, type Roster } from "./roster.js";
+import { diffRoster, isGeneralBallot, nameKey, normalizeForHash, normalizeParty, type Roster } from "./roster.js";
 
 const at = new Date("2027-08-01T00:00:00Z");
 const roster = (names: string[], extra: Partial<Roster> = {}): Roster => ({
@@ -108,5 +108,39 @@ describe("normalizeForHash", () => {
     const a = `<p>District 2</p><script>window.__CF$cv$params={r:'aaa'}</script>`;
     const b = `<p>District 3</p><script>window.__CF$cv$params={r:'bbb'}</script>`;
     expect(normalizeForHash(a)).not.toBe(normalizeForHash(b));
+  });
+});
+
+describe("telling a general ballot from a filing list", () => {
+  const race = (entries: Array<{ name: string; party?: string; isWriteIn?: boolean }>) => ({
+    raceKey: "r",
+    sourceUrl: "https://example.org",
+    observedAt: new Date(),
+    entries: entries.map((e) => ({ key: e.name, ...e })),
+  });
+
+  it("accepts one candidate per party, with any number of write-ins and independents", () => {
+    expect(
+      isGeneralBallot([
+        race([
+          { name: "a", party: "Democratic Party" },
+          { name: "b", party: "Republican Party" },
+          { name: "c", party: "Unaffiliated" },
+          { name: "d", party: "Unaffiliated" },
+          { name: "e", party: "Democratic Party", isWriteIn: true },
+        ]),
+      ]),
+    ).toBe(true);
+  });
+
+  it("rejects a list where a primary is still undecided", () => {
+    expect(isGeneralBallot([race([{ name: "a", party: "DEM" }, { name: "b", party: "D" }])])).toBe(false);
+  });
+
+  it("normalizes a state's own party spellings", () => {
+    expect(normalizeParty("DFL")).toBe("D");
+    expect(normalizeParty("Republican Party")).toBe("R");
+    expect(normalizeParty("Unity Party")).toBe("Unity Party");
+    expect(normalizeParty("")).toBeNull();
   });
 });

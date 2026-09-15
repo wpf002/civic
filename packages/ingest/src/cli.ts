@@ -26,8 +26,11 @@ import { resolveCouncilSeat, resolveFederalSeat } from "./seats.js";
 import { adminSessionToken, proposePairsInRace } from "@civic/core";
 import { createHash } from "node:crypto";
 import { crawlCampaignSite } from "./crawl.js";
+import { NOVEMBER_2026 as MN_NOVEMBER_2026, fetchMnRoster } from "./adapters/mn-sos.js";
+import { fetchStateRoster } from "./adapters/xlsx-states.js";
+import { NOVEMBER_2026_EID as SD_NOVEMBER_2026_EID, fetchSdRoster } from "./adapters/sd-sos.js";
 import { KNOWN_PLANS, fetchPlan } from "./adapters/block-plans.js";
-import { diffRoster, nameKey } from "./roster.js";
+import { diffRoster, isGeneralBallot, nameKey } from "./roster.js";
 
 const program = new Command("civic-ingest");
 
@@ -85,7 +88,7 @@ program
 program
   .command("ingest")
   .description("Fetch a roster and PERSIST it: snapshot, diff, and apply if additive.")
-  .requiredOption("--adapter <name>", "dallas-isd | dallas-city-secretary | fec | tx-sos | nc-sbe")
+  .requiredOption("--adapter <name>", "dallas-isd | dallas-city-secretary | fec | tx-sos | nc-sbe | mn-sos | co-sos | sd-sos | me-sos")
   .option("--sos-election <id>", "Texas SOS election id (default: 2026 November general)")
   .requiredOption("--election <slug>", "e.g. 2027-11-dallas")
   .requiredOption("--date <yyyy-mm-dd>", "the election date the source must match")
@@ -150,8 +153,11 @@ program
     } else if (o.adapter === "nc-sbe") {
       const run = await fetchNcRoster(o.date.includes("/") ? o.date : NC_NOVEMBER_2026, new Date());
       rosters = run.rosters;
+      // Filtered to the general election's date, the list is the general ballot once
+      // the primaries are decided. The list itself says whether they are.
+      basis = isGeneralBallot(run.rosters) ? "CERTIFIED" : "FILED";
       console.log(
-        `basis: ${run.basis} — ${run.candidateCount} candidates in ${run.rosters.length} modelled races ` +
+        `basis: ${basis} — ${run.candidateCount} candidates in ${run.rosters.length} modelled races ` +
           `(${run.collapsedRows} duplicate county rows collapsed)`,
       );
       const unmappedTotal = run.unmapped.reduce((n, u) => n + u.count, 0);
@@ -176,6 +182,26 @@ program
       console.log(
         `  ${unmappedTotal} certified candidates are in ${run.unmapped.length} offices this product ` +
           `does not model yet (top: ${run.unmapped.slice(0, 3).map((u) => `${u.officeName} x${u.count}`).join(", ")})`,
+      );
+      resolve = async (raceKey: string) => {
+        const { raceId, reason } = await resolveFederalSeat(o.election, raceKey);
+        if (!raceId) console.log(`  ! ${raceKey}: ${reason}`);
+        return raceId;
+      };
+    } else if (o.adapter === "mn-sos" || o.adapter === "co-sos" || o.adapter === "sd-sos" || o.adapter === "me-sos") {
+      const run =
+        o.adapter === "mn-sos"
+          ? await fetchMnRoster(MN_NOVEMBER_2026, new Date())
+          : o.adapter === "co-sos" || o.adapter === "me-sos"
+            ? await fetchStateRoster(o.adapter === "co-sos" ? "CO" : "ME", new Date())
+            : await fetchSdRoster(SD_NOVEMBER_2026_EID, new Date());
+      rosters = run.rosters;
+      // These lists are the state's own. After the primary they carry the general
+      // ballot; before it, every filer. The list itself says which.
+      basis = isGeneralBallot(run.rosters) ? "CERTIFIED" : "FILED";
+      console.log(
+        `basis: ${basis} — ${run.candidateCount} candidates in ${run.rosters.length} modelled races` +
+          (basis === "FILED" ? " (a party still has two candidates for one seat, so this is not the ballot yet)" : ""),
       );
       resolve = async (raceKey: string) => {
         const { raceId, reason } = await resolveFederalSeat(o.election, raceKey);
