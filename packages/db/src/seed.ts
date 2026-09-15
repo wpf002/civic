@@ -267,6 +267,7 @@ async function main() {
     ["Constitution", "CON"], ["American Constitution", "ACN"], ["Forward", "FWD"], ["Unity", "UNI"],
     ["Approval Voting", "AVP"], ["Working Families", "WF"], ["Conservative", "CRV"], ["Alliance", "ALL"],
     ["Legal Marijuana Now", "LMN"], ["Socialism and Liberation", "PSL"], ["No Labels", "NL"],
+    ["American Independent", "AIP"], ["Peace and Freedom", "PF"],
   ] as const) {
     await prisma.party.upsert({ where: { abbreviation }, update: {}, create: { name, abbreviation } });
   }

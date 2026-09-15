@@ -33,6 +33,7 @@ import { houseDistrict } from "./plan-lookup.js";
 import { ensureStateOffices, resolveStateOffice, type OfficeSpec } from "./state-offices.js";
 import { NOVEMBER_2026 as MN_NOVEMBER_2026, fetchMnRoster } from "./adapters/mn-sos.js";
 import { fetchStateRoster } from "./adapters/xlsx-states.js";
+import { fetchCaRoster } from "./adapters/ca-sos.js";
 import { NOVEMBER_2026_EID as SD_NOVEMBER_2026_EID, fetchSdRoster } from "./adapters/sd-sos.js";
 import { KNOWN_PLANS, fetchPlan } from "./adapters/block-plans.js";
 import { diffRoster, isGeneralBallot, nameKey } from "./roster.js";
@@ -93,7 +94,7 @@ program
 program
   .command("ingest")
   .description("Fetch a roster and PERSIST it: snapshot, diff, and apply if additive.")
-  .requiredOption("--adapter <name>", "dallas-isd | dallas-city-secretary | fec | tx-sos | nc-sbe | mn-sos | co-sos | sd-sos | me-sos")
+  .requiredOption("--adapter <name>", "dallas-isd | dallas-city-secretary | fec | tx-sos | nc-sbe | mn-sos | co-sos | sd-sos | me-sos | ca-sos")
   .option("--sos-election <id>", "Texas SOS election id (default: 2026 November general)")
   .requiredOption("--election <slug>", "e.g. 2027-11-dallas")
   .requiredOption("--date <yyyy-mm-dd>", "the election date the source must match")
@@ -192,6 +193,21 @@ program
         `  ${unmappedTotal} certified candidates are in ${run.unmapped.length} offices this product ` +
           `does not model yet (top: ${run.unmapped.slice(0, 3).map((u) => `${u.officeName} x${u.count}`).join(", ")})`,
       );
+      resolve = async (raceKey: string) => {
+        const { raceId, reason } = await resolveFederalSeat(o.election, raceKey);
+        if (!raceId) console.log(`  ! ${raceKey}: ${reason}`);
+        return raceId;
+      };
+    } else if (o.adapter === "ca-sos") {
+      const run = await fetchCaRoster(new Date());
+      rosters = run.rosters;
+      stateOffices = run.offices;
+      // The Secretary of State's certification. Top-two allows same-party pairs, so the
+      // party-duplicate test does not apply.
+      basis = "CERTIFIED";
+      console.log(`basis: CERTIFIED — ${run.candidateCount} candidates in ${run.rosters.length} contests`);
+      if (run.unopposed.length) console.log(`  one candidate (confirm against the PDF): ${run.unopposed.join(", ")}`);
+      for (const r of run.rejected) console.log(`  ! ${r.raceKey} read as ${r.read.length} candidates, left out: ${r.read.join(", ")}`);
       resolve = async (raceKey: string) => {
         const { raceId, reason } = await resolveFederalSeat(o.election, raceKey);
         if (!raceId) console.log(`  ! ${raceKey}: ${reason}`);
@@ -1022,7 +1038,7 @@ program
 program
   .command("offices")
   .description("Add the state offices a certified list says are on the ballot (statewide officers, legislature). Prints every race it creates.")
-  .requiredOption("--adapter <name>", "tx-sos | nc-sbe | mn-sos | co-sos | sd-sos | me-sos")
+  .requiredOption("--adapter <name>", "tx-sos | nc-sbe | mn-sos | co-sos | sd-sos | me-sos | ca-sos")
   .requiredOption("--election <slug>")
   .option("--dry-run")
   .action(async (o) => {
@@ -1034,6 +1050,7 @@ program
       "co-sos": () => fetchStateRoster("CO", now),
       "me-sos": () => fetchStateRoster("ME", now),
       "sd-sos": () => fetchSdRoster(SD_NOVEMBER_2026_EID, now),
+      "ca-sos": () => fetchCaRoster(now),
     };
     const load = lists[o.adapter];
     if (!load) throw new Error(`offices is not wired for ${o.adapter}`);
