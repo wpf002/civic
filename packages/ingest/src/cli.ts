@@ -30,6 +30,7 @@ import { US_STATES, congressionalSeat } from "@civic/core";
 import { censusNameFor, fetchLibraries, oneLine, pickPerDistrict, type Library } from "./adapters/ballot-addresses.js";
 import { electionQuery, toRosters as toCivicRosters, voterInfo, type CivicContest } from "./adapters/google-civic.js";
 import { houseDistrict } from "./plan-lookup.js";
+import { ensureStateOffices, resolveStateOffice, type OfficeSpec } from "./state-offices.js";
 import { NOVEMBER_2026 as MN_NOVEMBER_2026, fetchMnRoster } from "./adapters/mn-sos.js";
 import { fetchStateRoster } from "./adapters/xlsx-states.js";
 import { NOVEMBER_2026_EID as SD_NOVEMBER_2026_EID, fetchSdRoster } from "./adapters/sd-sos.js";
@@ -102,6 +103,7 @@ program
     // An adapter never creates a Race. Unresolvable rosters quarantine instead.
     let rosters;
     let basis: "FILED" | "CERTIFIED" = "FILED";
+    let txOffices = new Map<string, OfficeSpec>();
     let resolve: (raceKey: string) => Promise<string | null>;
 
     if (o.adapter === "dallas-isd") {
@@ -176,6 +178,7 @@ program
       };
     } else if (o.adapter === "tx-sos") {
       const run = await fetchCertifiedRoster(Number(o.sosElection ?? NOVEMBER_2026), new Date());
+      txOffices = run.offices;
       rosters = run.rosters;
       basis = "CERTIFIED";
       console.log(
@@ -188,6 +191,12 @@ program
           `does not model yet (top: ${run.unmapped.slice(0, 3).map((u) => `${u.officeName} x${u.count}`).join(", ")})`,
       );
       resolve = async (raceKey: string) => {
+        const spec = txOffices.get(raceKey);
+        if (spec) {
+          const raceId = await resolveStateOffice(o.election, spec);
+          if (!raceId) console.log(`  ! ${raceKey}: no race for ${spec.title} / ${spec.seatLabel}. Run the offices step first.`);
+          return raceId;
+        }
         const { raceId, reason } = await resolveFederalSeat(o.election, raceKey);
         if (!raceId) console.log(`  ! ${raceKey}: ${reason}`);
         return raceId;
@@ -1002,6 +1011,28 @@ program
           data: { websiteUrl: w.url },
         });
       }
+    }
+    await prisma.$disconnect();
+  });
+
+program
+  .command("offices")
+  .description("Add the state offices a certified list says are on the ballot (statewide officers, legislature). Prints every race it creates.")
+  .requiredOption("--adapter <name>", "tx-sos")
+  .requiredOption("--election <slug>")
+  .option("--dry-run")
+  .action(async (o) => {
+    if (o.adapter !== "tx-sos") throw new Error(`offices is not wired for ${o.adapter} yet`);
+    const run = await fetchCertifiedRoster(NOVEMBER_2026, new Date());
+    const upper = [...run.offices.values()].filter((s) => s.chamber === "upper").length;
+    const lower = [...run.offices.values()].filter((s) => s.chamber === "lower").length;
+    console.log(`${run.offices.size} state offices on the certified list: ${run.offices.size - upper - lower} statewide, ${upper} senate, ${lower} house`);
+    if (o.dryRun) {
+      for (const [k, s] of run.offices) console.log(`  ${k}: ${s.title} / ${s.seatLabel}`);
+    } else {
+      const created = await ensureStateOffices(o.election, "TX", run.offices);
+      console.log(`created ${created.length} races`);
+      for (const c of created.slice(0, 30)) console.log(`  + ${c}`);
     }
     await prisma.$disconnect();
   });

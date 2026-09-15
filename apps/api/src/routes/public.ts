@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma, type Prisma } from "@civic/db";
-import { congressionalSeat, hiddenElectionSlugs, matchCandidates, stateByName } from "@civic/core";
+import { congressionalSeat, hiddenElectionSlugs, legislativeSeat, matchCandidates, stateByName } from "@civic/core";
 import { houseDistrict, resolveDistricts } from "@civic/ingest";
 
 /**
@@ -203,8 +203,15 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
       const mine = races.filter((r) => {
         const seat = r.office.seatLabel ?? r.office.district?.name ?? "";
         if (r.office.title === "United States Representative") return !!houseSeat && seat === houseSeat;
-        // Statewide. The election is already this voter's state.
-        if (r.office.title === "United States Senator" || r.office.title === "Governor") return true;
+        if (r.office.title === "State Senator") {
+          return !!r.office.districtId && seat === legislativeSeat("upper", districts.stateSenate);
+        }
+        if (r.office.title === "State Representative") {
+          return !!r.office.districtId && seat === legislativeSeat("lower", districts.stateHouse);
+        }
+        // Statewide: a state-level office with no district. The election is already
+        // this voter's state.
+        if (r.office.jurisdiction.level === "STATE" && !r.office.districtId) return true;
         if (r.office.title.includes("Council")) {
           return !!districts.dallasCouncilPlace && seat === `Place ${districts.dallasCouncilPlace}`;
         }
@@ -234,8 +241,11 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     // What we could not answer. Named explicitly rather than left as an absence.
     const gaps: string[] = [];
     if (house.unknownBecause) gaps.push(house.unknownBecause);
-    if (districts.stateSenate) gaps.push(`${districts.stateSenate} — state legislative races are not covered yet`);
-    if (districts.stateHouse) gaps.push(`${districts.stateHouse} — state legislative races are not covered yet`);
+    // A chamber is covered once any of its seats is on file for this election.
+    const covered = async (title: string) =>
+      (await prisma.race.count({ where: { electionId: { in: elections.map((e) => e.id) }, office: { title } } })) > 0;
+    if (districts.stateSenate && !(await covered("State Senator"))) gaps.push(`${districts.stateSenate} — state legislative races are not covered yet`);
+    if (districts.stateHouse && !(await covered("State Representative"))) gaps.push(`${districts.stateHouse} — state legislative races are not covered yet`);
     if (districts.county) gaps.push(`${districts.county} — county races are not covered yet`);
     if (districts.place) gaps.push(`${districts.place} — city races are not covered yet`);
 

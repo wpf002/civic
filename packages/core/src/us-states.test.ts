@@ -43,3 +43,20 @@ describe("an address's House seat", () => {
     expect(congressionalSeat("TX", undefined)).toBeNull();
   });
 });
+
+describe("state offices", () => {
+  it("labels legislative seats with the chamber and the state's own id", async () => {
+    const { legislativeSeat, legislativeSeatLabel } = await import("./us-states.js");
+    expect(legislativeSeatLabel("upper", "23")).toBe("Senate District 23");
+    expect(legislativeSeat("lower", "State House District 45A")).toBe("House District 45A");
+    expect(legislativeSeat("upper", "State Senate District 23")).toBe("Senate District 23");
+    expect(legislativeSeat("lower", undefined)).toBeNull();
+  });
+
+  it("title-cases an office for display and slugs it for a key", async () => {
+    const { officeSlug, officeTitleCase } = await import("./us-states.js");
+    expect(officeTitleCase("COMPTROLLER OF PUBLIC ACCOUNTS")).toBe("Comptroller of Public Accounts");
+    expect(officeTitleCase("JUSTICE, SUPREME COURT, PLACE 2 - UNEXPIRED TERM")).toBe("Justice, Supreme Court, Place 2 - Unexpired Term");
+    expect(officeSlug("Justice, Supreme Court, Place 2 - Unexpired Term")).toBe("justice-supreme-court-place-2-unexpired-term");
+  });
+});

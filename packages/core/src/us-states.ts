@@ -127,3 +127,38 @@ export const SYNTHETIC_ELECTIONS: readonly string[] = ["2027-11-dallas"];
 
 export const hiddenElectionSlugs = (env: Record<string, string | undefined> = process.env): string[] =>
   env.SHOW_SYNTHETIC === "true" ? [] : [...SYNTHETIC_ELECTIONS];
+
+/**
+ * State legislative seats.
+ *
+ * Seat labels carry the chamber, "Senate District 23" and "House District 45A",
+ * because a state jurisdiction already holds "District 23" for its congressional
+ * seat. The district id is kept exactly as the state writes it: Minnesota and South
+ * Dakota number some house seats 45A and 45B.
+ */
+export type Chamber = "upper" | "lower";
+
+export const legislativeSeatLabel = (chamber: Chamber, id: string): string =>
+  `${chamber === "upper" ? "Senate" : "House"} District ${id.toUpperCase()}`;
+
+/** "State Senate District 23" / "State House District 45A" (Census names) to a seat label. */
+export function legislativeSeat(chamber: Chamber, censusName: string | undefined): string | null {
+  const id = censusName?.match(/District\s+([0-9]+[A-Z]?)\s*$/i)?.[1];
+  return id ? legislativeSeatLabel(chamber, id) : null;
+}
+
+const SMALL_WORDS = new Set(["of", "the", "and", "for", "on", "in", "to", "a"]);
+
+/** "COMPTROLLER OF PUBLIC ACCOUNTS" -> "Comptroller of Public Accounts". Display only. */
+export function officeTitleCase(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .map((w, i) => (i > 0 && SMALL_WORDS.has(w) ? w : w.replace(/(^|[-(])([a-z])/g, (_, p: string, c: string) => p + c.toUpperCase())))
+    .join(" ");
+}
+
+export const officeSlug = (title: string): string =>
+  title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");

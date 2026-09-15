@@ -22,6 +22,7 @@
  * stored, logged or diffed.
  */
 import { nameKey, type Roster, type RosterEntry } from "../roster.js";
+import { legislativeKey, legislativeSpec, statewideKey, statewideSpec, type OfficeSpec } from "../state-office-specs.js";
 
 export const SOS_ENDPOINT =
   "https://goelect.txelections.civixapps.com/api-ivis-cbp/api/cbp/findQualifiedCandidates";
@@ -116,8 +117,45 @@ export function raceKeyForOffice(officeName: string): string | null {
   const house = o.match(/^U\.\s*S\.\s*REPRESENTATIVE DISTRICT (\d{1,2})$/);
   if (house) return `us-house-tx-${String(Number(house[1])).padStart(2, "0")}`;
   if (/^U\.\s*S\.\s*SENATOR$/.test(o)) return "us-senate-tx";
-  // Exactly GOVERNOR. "LIEUTENANT GOVERNOR" is a different office and stays unmapped.
+  // Exactly GOVERNOR. "LIEUTENANT GOVERNOR" is a different office.
   if (o === "GOVERNOR") return "governor-tx";
+  const spec = stateOfficeSpec(officeName);
+  if (spec) {
+    return spec.chamber
+      ? legislativeKey("TX", spec.chamber, spec.seatLabel.split("District ")[1]!)
+      : statewideKey("TX", spec.title);
+  }
+  return null;
+}
+
+/** Statewide offices on the Texas ballot, exactly as the SOS names them. */
+const TX_STATEWIDE = [
+  /^LIEUTENANT GOVERNOR$/,
+  /^ATTORNEY GENERAL$/,
+  /^COMPTROLLER OF PUBLIC ACCOUNTS$/,
+  /^COMMISSIONER OF THE GENERAL LAND OFFICE$/,
+  /^COMMISSIONER OF AGRICULTURE$/,
+  /^RAILROAD COMMISSIONER( - UNEXPIRED TERM)?$/,
+  /^CHIEF JUSTICE, SUPREME COURT( - UNEXPIRED TERM)?$/,
+  /^JUSTICE, SUPREME COURT, PLACE \d+( - UNEXPIRED TERM)?$/,
+  /^PRESIDING JUDGE, COURT OF CRIMINAL APPEALS( - UNEXPIRED TERM)?$/,
+  /^JUDGE, COURT OF CRIMINAL APPEALS, PLACE \d+( - UNEXPIRED TERM)?$/,
+];
+
+/**
+ * The state office a Texas ballot line is for, or null.
+ *
+ * Statewide offices and the two legislative chambers. The State Board of Education,
+ * courts of appeals and district courts have their own district maps that no address
+ * lookup here resolves, so they stay unmapped rather than showing to the wrong voters.
+ */
+export function stateOfficeSpec(officeName: string): OfficeSpec | null {
+  const o = officeName.toUpperCase().replace(/\s+/g, " ").trim();
+  const senate = o.match(/^STATE SENATOR,? DISTRICT (\d{1,2})( - UNEXPIRED TERM)?$/);
+  if (senate && !senate[2]) return legislativeSpec("upper", String(Number(senate[1])));
+  const house = o.match(/^STATE REPRESENTATIVE,? DISTRICT (\d{1,3})( - UNEXPIRED TERM)?$/);
+  if (house && !house[2]) return legislativeSpec("lower", String(Number(house[1])));
+  if (TX_STATEWIDE.some((re) => re.test(o))) return statewideSpec(o);
   return null;
 }
 
@@ -128,6 +166,8 @@ export interface SosRosterRun {
   candidateCount: number;
   /** Offices with no race in this product yet, with how many candidates each has. */
   unmapped: Array<{ officeName: string; officeType: string; count: number }>;
+  /** State offices on this ballot, by race key, for the reviewed `offices` step. */
+  offices: Map<string, OfficeSpec>;
 }
 
 /** Turn certified rows into rosters. Pure; no network. */
@@ -138,6 +178,7 @@ export function toRosters(
 ): SosRosterRun {
   const byRace = new Map<string, RosterEntry[]>();
   const unmappedCounts = new Map<string, { officeName: string; officeType: string; count: number }>();
+  const offices = new Map<string, OfficeSpec>();
 
   for (const c of rows) {
     if (c.idElection !== electionId) continue;
@@ -152,6 +193,8 @@ export function toRosters(
       continue;
     }
 
+    const spec = stateOfficeSpec(c.officeName);
+    if (spec) offices.set(raceKey, spec);
     const name = formatBallotName(c.fullName);
     const list = byRace.get(raceKey) ?? [];
     list.push({
@@ -182,6 +225,7 @@ export function toRosters(
     rosters,
     candidateCount: rosters.reduce((n, r) => n + r.entries.length, 0),
     unmapped: [...unmappedCounts.values()].sort((a, b) => b.count - a.count),
+    offices,
   };
 }
 

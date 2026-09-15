@@ -72,7 +72,7 @@ describe("office mapping", () => {
 
   it("returns nothing for offices it does not model, rather than a near match", () => {
     // A county constable roster attached to the wrong race is worse than one that waits.
-    for (const o of ["CONSTABLE PRECINCT 1", "STATE REPRESENTATIVE DISTRICT 1", "COUNTY JUDGE", "LIEUTENANT GOVERNOR"]) {
+    for (const o of ["CONSTABLE PRECINCT 1", "MEMBER, STATE BOARD OF EDUCATION, DISTRICT 6", "COUNTY JUDGE", "DISTRICT JUDGE, 14TH JUDICIAL DISTRICT"]) {
       expect(raceKeyForOffice(o)).toBeNull();
     }
   });
@@ -88,9 +88,10 @@ describe("certified rosters from the real response", () => {
   });
 
   it("reports unmapped offices with counts instead of dropping them silently", () => {
-    const run = toRosters(rows, NOVEMBER_2026, new Date());
-    expect(run.unmapped.length).toBeGreaterThan(0);
-    expect(run.unmapped[0]!.count).toBeGreaterThan(0);
+    // The fixture's offices are all modelled now, so add one that is not.
+    const constable = { ...(rows[0] as object), officeName: "HARRIS - CONSTABLE PRECINCT 1", officeType: "County" } as never;
+    const run = toRosters([...rows, constable], NOVEMBER_2026, new Date());
+    expect(run.unmapped).toEqual([{ officeName: "HARRIS - CONSTABLE PRECINCT 1", officeType: "County", count: 1 }]);
   });
 
   it("carries the SOS id so a later run can match without re-deriving it", () => {
@@ -128,5 +129,20 @@ describe("fetching an undocumented endpoint", () => {
     await expect(
       fetchCertifiedRoster(999999, new Date(), { sleep: async () => {}, fetchImpl: async () => ok(raw) }),
     ).rejects.toThrow(/parse failure, not a finding/);
+  });
+});
+
+describe("state offices", () => {
+  it("maps statewide officers and both chambers, and nothing with its own district map", async () => {
+    const { stateOfficeSpec } = await import("./tx-sos.js");
+    expect(stateOfficeSpec("COMPTROLLER OF PUBLIC ACCOUNTS")).toEqual({ title: "Comptroller of Public Accounts", seatLabel: "Comptroller of Public Accounts" });
+    expect(stateOfficeSpec("STATE SENATOR, DISTRICT 1")).toEqual({ title: "State Senator", seatLabel: "Senate District 1", chamber: "upper" });
+    expect(stateOfficeSpec("STATE REPRESENTATIVE DISTRICT 124")).toEqual({ title: "State Representative", seatLabel: "House District 124", chamber: "lower" });
+    // Boards and courts drawn on their own maps would show to the wrong voters.
+    for (const o of ["MEMBER, STATE BOARD OF EDUCATION, DISTRICT 6", "DISTRICT JUDGE, 14TH JUDICIAL DISTRICT", "HARRIS - COUNTY JUDGE"]) {
+      expect(stateOfficeSpec(o)).toBeNull();
+    }
+    expect(raceKeyForOffice("STATE REPRESENTATIVE DISTRICT 124")).toBe("state-house-tx-124");
+    expect(raceKeyForOffice("ATTORNEY GENERAL")).toBe("statewide-tx-attorney-general");
   });
 });
