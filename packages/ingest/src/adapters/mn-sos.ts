@@ -17,6 +17,7 @@
  * Basis is FILED. Minnesota publishes the filing list; a primary loser still appears.
  */
 import { nameKey, normalizeParty, type Roster, type RosterEntry } from "../roster.js";
+import { keyForSpec, specFromPatterns, type OfficeSpec } from "../state-office-specs.js";
 
 export const MN_BASE = "https://electionresultsfiles.sos.state.mn.us";
 export const candUrl = (date: string) => `${MN_BASE}/${date}/cand.txt`;
@@ -100,7 +101,21 @@ export function raceKeyForOffice(officeName: string): string | null {
   if (house) return `us-house-mn-${String(Number(house[1])).padStart(2, "0")}`;
   if (/^U\.?S\.? SENATOR$/.test(o)) return "us-senate-mn";
   if (o === "GOVERNOR & LT GOVERNOR") return "governor-mn";
-  return null;
+  const spec = mnOfficeSpec(officeName);
+  return spec ? keyForSpec("MN", spec) : null;
+}
+
+/** Minnesota statewide officers, appellate courts and both chambers. District courts are drawn by judicial district and stay unmapped. */
+export function mnOfficeSpec(officeName: string): OfficeSpec | null {
+  return specFromPatterns(officeName, {
+    upper: /^State Senator District (\d+)$/i,
+    lower: /^State Representative District (\d+[AB])$/i,
+    statewide: [
+      /^(Secretary of State|State Auditor|Attorney General)$/i,
+      /^(Associate Justice|Chief Justice) - Supreme Court( \d+)?$/i,
+      /^Judge - Court of Appeals \d+$/i,
+    ],
+  });
 }
 
 export interface MnRosterRun {
@@ -111,9 +126,11 @@ export interface MnRosterRun {
   fromState: number;
   fromLocal: number;
   unmapped: Array<{ officeName: string; count: number }>;
+  offices: Map<string, OfficeSpec>;
 }
 
 export function toRosters(rows: MnCandidate[], observedAt: Date, sourceUrl: string): MnRosterRun {
+  const offices = new Map<string, OfficeSpec>();
   const byRace = new Map<string, Map<string, RosterEntry>>();
   const unmapped = new Map<string, number>();
 
@@ -123,6 +140,8 @@ export function toRosters(rows: MnCandidate[], observedAt: Date, sourceUrl: stri
       unmapped.set(c.officeName, (unmapped.get(c.officeName) ?? 0) + 1);
       continue;
     }
+    const spec = mnOfficeSpec(c.officeName);
+    if (spec) offices.set(raceKey, spec);
     // A governor's line is the ticket: "Amy Klobuchar and Ben Schierer". The race is
     // for governor, so the candidate is the first name; the running mate is not a
     // separate candidate for it.
@@ -163,6 +182,7 @@ export function toRosters(rows: MnCandidate[], observedAt: Date, sourceUrl: stri
     fromState: rows.filter((r) => r.file === "state").length,
     fromLocal: rows.filter((r) => r.file === "local").length,
     unmapped: [...unmapped.entries()].map(([officeName, count]) => ({ officeName, count })).sort((a, b) => b.count - a.count),
+    offices,
   };
 }
 

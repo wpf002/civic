@@ -16,6 +16,7 @@
  * Basis is FILED.
  */
 import { nameKey, normalizeParty, type Roster, type RosterEntry } from "../roster.js";
+import { keyForSpec, specFromPatterns, type OfficeSpec } from "../state-office-specs.js";
 
 export const SD_URL = "https://vip.sdsos.gov/candidatelist.aspx";
 export const NOVEMBER_2026_EID = "774";
@@ -73,6 +74,8 @@ export function raceKeyForOffice(office: string): string | null {
   const o = office.toUpperCase().replace(/\s+/g, " ").trim();
   if (/^UNITED STATES SENATOR$/.test(o)) return "us-senate-sd";
   if (o === "GOVERNOR AND LIEUTENANT GOVERNOR" || o === "GOVERNOR") return "governor-sd";
+  const spec = sdOfficeSpec(office);
+  if (spec) return keyForSpec("SD", spec);
   // South Dakota has one at-large congressional district.
   if (/^(UNITED STATES )?REPRESENTATIVE( IN CONGRESS)?$/.test(o)) return "us-house-sd-01";
   return null;
@@ -85,12 +88,14 @@ export interface SdRosterRun {
   /** Kept out of the roster and reported, never silently included or silently dropped. */
   withdrawn: Array<{ office: string; name: string }>;
   unmapped: Array<{ office: string; count: number }>;
+  offices: Map<string, OfficeSpec>;
 }
 
 export function toRosters(rows: SdCandidate[], sourceUrl: string, observedAt: Date): SdRosterRun {
   const byRace = new Map<string, Map<string, RosterEntry>>();
   const unmapped = new Map<string, number>();
   const withdrawn: SdRosterRun["withdrawn"] = [];
+  const offices = new Map<string, OfficeSpec>();
 
   for (const c of rows) {
     // A withdrawn candidate is not on the roster and is not forgotten either. It
@@ -105,6 +110,8 @@ export function toRosters(rows: SdCandidate[], sourceUrl: string, observedAt: Da
       unmapped.set(c.office, (unmapped.get(c.office) ?? 0) + 1);
       continue;
     }
+    const spec = sdOfficeSpec(c.office);
+    if (spec) offices.set(raceKey, spec);
     const key = nameKey(c.name);
     const race = byRace.get(raceKey) ?? new Map<string, RosterEntry>();
     if (!race.has(key)) race.set(key, { key, name: c.name, sourceName: c.name, party: normalizeParty(c.party), sourceUrl });
@@ -125,6 +132,7 @@ export function toRosters(rows: SdCandidate[], sourceUrl: string, observedAt: Da
     rosters,
     candidateCount: rosters.reduce((n, r) => n + r.entries.length, 0),
     withdrawn,
+    offices,
     unmapped: [...unmapped.entries()].map(([office, count]) => ({ office, count })).sort((a, b) => b.count - a.count),
   };
 }
@@ -148,4 +156,14 @@ export async function fetchSdRoster(
     );
   }
   return toRosters(rows, url, observedAt);
+}
+
+/**
+ * South Dakota's statewide officers. The candidate list names legislative offices
+ * without their district, so the legislature stays unmapped until the district is read.
+ */
+export function sdOfficeSpec(office: string): OfficeSpec | null {
+  return specFromPatterns(office, {
+    statewide: [/^(Secretary of State|Attorney General|State Auditor|State Treasurer|Commissioner of School and Public Lands|Public Utilities Commissioner)$/i],
+  });
 }

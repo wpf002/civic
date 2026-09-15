@@ -20,6 +20,7 @@
  * `stripPii` before anything else reads a row — same rule as the Texas adapter.
  */
 import { nameKey, normalizeParty, type Roster, type RosterEntry } from "../roster.js";
+import { keyForSpec, specFromPatterns, type OfficeSpec } from "../state-office-specs.js";
 
 export const NC_FILING_INDEX = "https://s3.amazonaws.com/dl.ncsbe.gov/Elections/2026/Candidate%20Filing/";
 export const NC_CANDIDATE_CSV = `${NC_FILING_INDEX}Candidate_Listing_2026.csv`;
@@ -98,7 +99,18 @@ export function raceKeyForContest(contest: string): string | null {
   const house = c.match(/^US HOUSE OF REPRESENTATIVES DISTRICT (\d{1,2})$/);
   if (house) return `us-house-nc-${String(Number(house[1])).padStart(2, "0")}`;
   if (c === "US SENATE") return "us-senate-nc";
-  return null;
+  const spec = ncOfficeSpec(contest);
+  return spec ? keyForSpec("NC", spec) : null;
+}
+
+/** North Carolina's appellate courts and both chambers. District attorneys and district courts are drawn by prosecutorial and judicial district and stay unmapped. */
+export function ncOfficeSpec(contest: string): OfficeSpec | null {
+  // The file prefixes state contests with "NC"; the office's name does not include it.
+  return specFromPatterns(contest.toUpperCase().replace(/\s+/g, " ").trim().replace(/^NC /, ""), {
+    upper: /^STATE SENATE DISTRICT (\d+)$/,
+    lower: /^HOUSE OF REPRESENTATIVES DISTRICT (\d+)$/,
+    statewide: [/^SUPREME COURT (ASSOCIATE|CHIEF) JUSTICE( SEAT \d+)?$/, /^COURT OF APPEALS JUDGE SEAT \d+$/],
+  });
 }
 
 /** Title-case a shouted ballot name without touching what is inside it. */
@@ -114,11 +126,13 @@ export interface NcRosterRun {
   unmapped: Array<{ contest: string; count: number }>;
   /** How many raw rows collapsed into each candidate, i.e. counties per contest. */
   collapsedRows: number;
+  offices: Map<string, OfficeSpec>;
 }
 
 export function toRosters(rows: NcCandidate[], electionDate: string, observedAt: Date): NcRosterRun {
   const byRace = new Map<string, Map<string, RosterEntry>>();
   const unmapped = new Map<string, number>();
+  const offices = new Map<string, OfficeSpec>();
   let collapsedRows = 0;
 
   for (const r of rows) {
@@ -129,6 +143,8 @@ export function toRosters(rows: NcCandidate[], electionDate: string, observedAt:
       unmapped.set(r.contest, (unmapped.get(r.contest) ?? 0) + 1);
       continue;
     }
+    const spec = ncOfficeSpec(r.contest);
+    if (spec) offices.set(raceKey, spec);
 
     const name = formatBallotName(r.ballotName);
     const key = nameKey(name);
@@ -159,6 +175,7 @@ export function toRosters(rows: NcCandidate[], electionDate: string, observedAt:
       .map(([contest, count]) => ({ contest, count }))
       .sort((a, b) => b.count - a.count),
     collapsedRows,
+    offices,
   };
 }
 

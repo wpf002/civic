@@ -89,7 +89,7 @@ describe("certified rosters from the real response", () => {
 
   it("reports unmapped offices with counts instead of dropping them silently", () => {
     // The fixture's offices are all modelled now, so add one that is not.
-    const constable = { ...(rows[0] as object), officeName: "HARRIS - CONSTABLE PRECINCT 1", officeType: "County" } as never;
+    const constable = { ...(rows[0] as unknown as object), officeName: "HARRIS - CONSTABLE PRECINCT 1", officeType: "County" } as never;
     const run = toRosters([...rows, constable], NOVEMBER_2026, new Date());
     expect(run.unmapped).toEqual([{ officeName: "HARRIS - CONSTABLE PRECINCT 1", officeType: "County", count: 1 }]);
   });

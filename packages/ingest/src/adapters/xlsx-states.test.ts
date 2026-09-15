@@ -32,14 +32,17 @@ describe("Maine", () => {
     const run = toRosters(me, "ME", "u", new Date());
     expect(run.coverageCeiling).toBe("county");
     const offices = run.unmapped.map((u) => u.office);
-    expect(offices).toEqual(expect.arrayContaining(["SR", "CC"]));
+    // County offices stay unmapped; the legislature now maps.
+    expect(offices).toEqual(expect.arrayContaining(["CC"]));
+    expect(offices).not.toContain("SR");
   });
 
   it("maps its abbreviated federal offices", () => {
     expect(raceKeyMaine("US", null)).toBe("us-senate-me");
     expect(raceKeyMaine("CG", "1")).toBe("us-house-me-01");
     expect(raceKeyMaine("CG", "2")).toBe("us-house-me-02");
-    expect(raceKeyMaine("SR", "12")).toBeNull();
+    expect(raceKeyMaine("SR", "12")).toBe("state-house-me-12");
+    expect(raceKeyMaine("CC", "1")).toBeNull();
   });
 });
 

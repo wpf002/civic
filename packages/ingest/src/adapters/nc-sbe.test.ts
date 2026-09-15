@@ -63,9 +63,15 @@ describe("contests", () => {
   });
 
   it("returns nothing for the offices with no race yet, rather than guessing", () => {
-    for (const c of ["TOWN OF BOONVILLE MAYOR", "YADKIN COUNTY SHERIFF", "NC SUPREME COURT ASSOCIATE JUSTICE SEAT 01"]) {
+    for (const c of ["TOWN OF BOONVILLE MAYOR", "YADKIN COUNTY SHERIFF", "DISTRICT ATTORNEY DISTRICT 01"]) {
       expect(raceKeyForContest(c)).toBeNull();
     }
+  });
+
+  it("maps the appellate courts and both chambers", () => {
+    expect(raceKeyForContest("NC SUPREME COURT ASSOCIATE JUSTICE SEAT 01")).toBe("statewide-nc-supreme-court-associate-justice-seat-01");
+    expect(raceKeyForContest("NC STATE SENATE DISTRICT 01")).toBe("state-senate-nc-1");
+    expect(raceKeyForContest("NC HOUSE OF REPRESENTATIVES DISTRICT 001")).toBe("state-house-nc-1");
   });
 });
 

@@ -15,6 +15,7 @@
  */
 import { readXlsx } from "../xlsx.js";
 import { nameKey, normalizeParty, type Roster, type RosterEntry } from "../roster.js";
+import { keyForSpec, legislativeSpec, specFromPatterns, type OfficeSpec } from "../state-office-specs.js";
 
 export const ME_URL =
   "https://www.maine.gov/sos/sites/maine.gov.sos/files/inline-files/2026%20General%20Candidate%20List%20-%20FINAL.xlsx";
@@ -37,6 +38,7 @@ export interface StateRosterRun {
   /** The deepest level this state's file reaches. Not a gap; a boundary. */
   coverageCeiling: "state" | "county";
   unmapped: Array<{ office: string; count: number }>;
+  offices: Map<string, OfficeSpec>;
 }
 
 /** Maine: Office | Dist | County | Party | Date Filed | Last | First | Middle | Suffix | Town */
@@ -81,11 +83,30 @@ export function parseColorado(rows: string[][]): StateCandidate[] {
   return out;
 }
 
+/** Maine's two chambers. Its constitutional officers are chosen by the Legislature, not on the ballot. */
+export function meOfficeSpec(office: string, district: string | null): OfficeSpec | null {
+  const o = office.trim().toUpperCase();
+  if (!district || !/^\d+$/.test(district)) return null;
+  if (o === "SS") return legislativeSpec("upper", String(Number(district)));
+  if (o === "SR") return legislativeSpec("lower", String(Number(district)));
+  return null;
+}
+
+/** Colorado's statewide officers and both chambers. Regents and the State Board of Education have their own districts and stay unmapped. */
+export function coOfficeSpec(office: string, district: string | null): OfficeSpec | null {
+  const o = office.trim();
+  if (/^State Senate$/i.test(o) && district && /^\d+$/.test(district)) return legislativeSpec("upper", String(Number(district)));
+  if (/^State House of Representatives$/i.test(o) && district && /^\d+$/.test(district)) return legislativeSpec("lower", String(Number(district)));
+  return specFromPatterns(o, { statewide: [/^(Secretary of State|State Treasurer|Attorney General)$/i] });
+}
+
 /** Maine abbreviates offices: US = US Senate, CG = Congress. */
 export function raceKeyMaine(office: string, district: string | null): string | null {
   const o = office.trim().toUpperCase();
   if (o === "US") return "us-senate-me";
   if (o === "GOV") return "governor-me";
+  const spec = meOfficeSpec(office, district);
+  if (spec) return keyForSpec("ME", spec);
   if (o === "CG" && district) return `us-house-me-${String(Number(district)).padStart(2, "0")}`;
   return null;
 }
@@ -95,6 +116,8 @@ export function raceKeyColorado(office: string, district: string | null): string
   if (o === "US SENATE") return "us-senate-co";
   // Exactly GOVERNOR. "LT. GOVERNOR" is its own office on this list.
   if (o === "GOVERNOR") return "governor-co";
+  const spec = coOfficeSpec(office, district);
+  if (spec) return keyForSpec("CO", spec);
   if (o.startsWith("US HOUSE") || o.startsWith("REPRESENTATIVE TO THE")) {
     const d = district ?? o.match(/(\d+)/)?.[1];
     if (d) return `us-house-co-${String(Number(d)).padStart(2, "0")}`;
@@ -109,8 +132,10 @@ export function toRosters(
   observedAt: Date,
 ): StateRosterRun {
   const keyFor = state === "ME" ? raceKeyMaine : raceKeyColorado;
+  const specFor = state === "ME" ? meOfficeSpec : coOfficeSpec;
   const byRace = new Map<string, Map<string, RosterEntry>>();
   const unmapped = new Map<string, number>();
+  const offices = new Map<string, OfficeSpec>();
 
   for (const c of rows) {
     const raceKey = keyFor(c.office, c.district);
@@ -118,6 +143,8 @@ export function toRosters(
       unmapped.set(c.office, (unmapped.get(c.office) ?? 0) + 1);
       continue;
     }
+    const spec = specFor(c.office, c.district);
+    if (spec) offices.set(raceKey, spec);
     const key = nameKey(c.name);
     const race = byRace.get(raceKey) ?? new Map<string, RosterEntry>();
     if (!race.has(key)) {
@@ -142,6 +169,7 @@ export function toRosters(
     candidateCount: rosters.reduce((n, r) => n + r.entries.length, 0),
     coverageCeiling: state === "ME" ? "county" : "state",
     unmapped: [...unmapped.entries()].map(([office, count]) => ({ office, count })).sort((a, b) => b.count - a.count),
+    offices,
   };
 }
 
