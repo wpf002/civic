@@ -35,6 +35,7 @@ import { NOVEMBER_2026 as MN_NOVEMBER_2026, fetchMnRoster } from "./adapters/mn-
 import { fetchStateRoster } from "./adapters/xlsx-states.js";
 import { fetchCaRoster } from "./adapters/ca-sos.js";
 import { fetchFlRoster } from "./adapters/fl-dos.js";
+import { fetchInRoster } from "./adapters/in-sos.js";
 import { NOVEMBER_2026_EID as SD_NOVEMBER_2026_EID, fetchSdRoster } from "./adapters/sd-sos.js";
 import { KNOWN_PLANS, fetchPlan } from "./adapters/block-plans.js";
 import { diffRoster, isGeneralBallot, nameKey } from "./roster.js";
@@ -95,7 +96,7 @@ program
 program
   .command("ingest")
   .description("Fetch a roster and PERSIST it: snapshot, diff, and apply if additive.")
-  .requiredOption("--adapter <name>", "dallas-isd | dallas-city-secretary | fec | tx-sos | nc-sbe | mn-sos | co-sos | sd-sos | me-sos | ca-sos | fl-dos")
+  .requiredOption("--adapter <name>", "dallas-isd | dallas-city-secretary | fec | tx-sos | nc-sbe | mn-sos | co-sos | sd-sos | me-sos | ca-sos | fl-dos | in-sos")
   .option("--sos-election <id>", "Texas SOS election id (default: 2026 November general)")
   .requiredOption("--election <slug>", "e.g. 2027-11-dallas")
   .requiredOption("--date <yyyy-mm-dd>", "the election date the source must match")
@@ -226,13 +227,15 @@ program
         if (!raceId) console.log(`  ! ${raceKey}: ${reason}`);
         return raceId;
       };
-    } else if (o.adapter === "mn-sos" || o.adapter === "co-sos" || o.adapter === "sd-sos" || o.adapter === "me-sos") {
+    } else if (o.adapter === "mn-sos" || o.adapter === "co-sos" || o.adapter === "sd-sos" || o.adapter === "me-sos" || o.adapter === "in-sos") {
       const run =
         o.adapter === "mn-sos"
           ? await fetchMnRoster(MN_NOVEMBER_2026, new Date())
           : o.adapter === "co-sos" || o.adapter === "me-sos"
             ? await fetchStateRoster(o.adapter === "co-sos" ? "CO" : "ME", new Date())
-            : await fetchSdRoster(SD_NOVEMBER_2026_EID, new Date());
+            : o.adapter === "in-sos"
+              ? await fetchInRoster(new Date())
+              : await fetchSdRoster(SD_NOVEMBER_2026_EID, new Date());
       rosters = run.rosters;
       stateOffices = run.offices;
       // These lists are the state's own. After the primary they carry the general
@@ -1066,7 +1069,7 @@ program
 program
   .command("offices")
   .description("Add the state offices a certified list says are on the ballot (statewide officers, legislature). Prints every race it creates.")
-  .requiredOption("--adapter <name>", "tx-sos | nc-sbe | mn-sos | co-sos | sd-sos | me-sos | ca-sos | fl-dos")
+  .requiredOption("--adapter <name>", "tx-sos | nc-sbe | mn-sos | co-sos | sd-sos | me-sos | ca-sos | fl-dos | in-sos")
   .requiredOption("--election <slug>")
   .option("--dry-run")
   .action(async (o) => {
@@ -1080,6 +1083,7 @@ program
       "sd-sos": () => fetchSdRoster(SD_NOVEMBER_2026_EID, now),
       "ca-sos": () => fetchCaRoster(now),
       "fl-dos": () => fetchFlRoster(now),
+      "in-sos": () => fetchInRoster(now),
     };
     const load = lists[o.adapter];
     if (!load) throw new Error(`offices is not wired for ${o.adapter}`);
