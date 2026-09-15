@@ -140,7 +140,8 @@ describe("telling a general ballot from a filing list", () => {
   it("normalizes a state's own party spellings", () => {
     expect(normalizeParty("DFL")).toBe("D");
     expect(normalizeParty("Republican Party")).toBe("R");
-    expect(normalizeParty("Unity Party")).toBe("Unity Party");
+    expect(normalizeParty("Unity Party")).toBe("UNI");
+    expect(normalizeParty("Some New Party")).toBe("Some New Party");
     expect(normalizeParty("")).toBeNull();
   });
 });
