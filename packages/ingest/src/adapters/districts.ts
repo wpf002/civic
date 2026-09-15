@@ -23,6 +23,10 @@ export interface DistrictResult {
   point: { lat: number; lon: number };
   matchedAddress: string;
   state?: string;
+  /** USPS code, e.g. "TX". Elections are keyed by it, not by the state's name. */
+  stateCode?: string;
+  /** 2020 census block GEOID. Resolves districts from an enacted plan the layers lag. */
+  block?: string;
   county?: string;
   place?: string;
   congressional?: string;
@@ -108,6 +112,7 @@ export async function assertLayerIdentity(layerUrl: string, expected: string): P
 /** The plain string fields on DistrictResult, so assignment stays type-checked. */
 type StringField =
   | "state"
+  | "stateCode"
   | "county"
   | "place"
   | "congressional"
@@ -163,6 +168,11 @@ export async function resolveDistricts(address: string): Promise<DistrictResult 
   };
 
   set("state", "States", pick(g, "States"));
+  set("stateCode", "States", pick(g, "States", "STUSAB"));
+  // Kept off the provenance list: a block is a precise location, and the response
+  // needs the district it resolves to, not the block itself.
+  const block = pick(g, "2020 Census Blocks", "GEOID");
+  if (block) out.block = block;
   set("county", "Counties", pick(g, "Counties"));
   set("place", "Incorporated Places", pick(g, "Incorporated Places"));
   set("schoolDistrictName", "Unified School Districts", pick(g, "Unified School Districts"));

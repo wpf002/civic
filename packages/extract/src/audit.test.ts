@@ -54,3 +54,17 @@ describe("what the audit does and does not do", () => {
     expect(a.sampled).toBe(b.sampled);
   });
 });
+
+describe("a failed call", () => {
+  it("is left out of the rate instead of counted as wrong", async () => {
+    const failing = (async () => {
+      throw new Error("overloaded");
+    }) as unknown as CompleteFn;
+    const r = await auditPublished({ size: 3, complete: failing });
+    expect(r.correct).toBe(0);
+    expect(r.errorRate).toBe(0);
+    expect(r.faults.ERROR).toBeUndefined();
+    // Every row either failed or had no source to read; none became a verdict.
+    expect(r.sampled).toBe(r.faults.NO_SOURCE ?? 0);
+  });
+});

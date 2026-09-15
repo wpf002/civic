@@ -392,6 +392,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         data: {
           candidateId: old.candidateId,
           issueId: old.issueId,
+          // A correction answers the same question as the row it replaces. Without this,
+          // the corrected answer drops off every page that lists answers by proposition.
+          propositionId: old.propositionId,
           stance: body.stance,
           summary: body.summary,
           confidence: old.confidence,

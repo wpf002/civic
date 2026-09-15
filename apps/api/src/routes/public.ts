@@ -1,8 +1,9 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma, type Prisma } from "@civic/db";
-import { matchCandidates } from "@civic/core";
+import { congressionalSeat, hiddenElectionSlugs, matchCandidates, stateByName } from "@civic/core";
 import { resolveDistricts } from "@civic/ingest";
+import { houseDistrict } from "../plan-lookup.js";
 
 /**
  * Read-only. Only PUBLISHED positions ever leave this process — enforced in every
@@ -85,7 +86,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
         select: { level: true, name: true, ocdId: true },
       }),
       prisma.election.findMany({
-        where: { electionDate: { gte: new Date() } },
+        where: { electionDate: { gte: new Date() }, slug: { notIn: hiddenElectionSlugs() } },
         select: { slug: true, name: true, state: true, electionDate: true },
         orderBy: { electionDate: "asc" },
       }),
@@ -145,11 +146,32 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    const state = districts.state?.trim();
+    // Elections are per state. This used to be hard-coded to Texas, which showed a
+    // North Carolina voter the Texas Senate race and a Texas House seat with the same
+    // district number as their own.
+    const stateCode = districts.stateCode ?? stateByName(districts.state ?? "")?.code;
+    if (!stateCode) {
+      return reply.code(404).send({
+        error: "that address could not be placed in a state",
+        why: "The Census geocoder matched the address but returned no state for it.",
+      });
+    }
     const elections = await prisma.election.findMany({
-      where: { electionDate: { gte: new Date() }, ...(state ? { state: "TX" } : {}) },
+      where: { electionDate: { gte: new Date() }, state: stateCode, slug: { notIn: hiddenElectionSlugs() } },
       orderBy: { electionDate: "asc" },
     });
+    // Ten states redrew their House maps after the Census layer was made. Those are
+    // answered from the plan in force; everyone else from the Census layer.
+    const house = await houseDistrict(stateCode, elections[0]?.electionDate ?? new Date(), {
+      ...(districts.block ? { block: districts.block } : {}),
+      point: districts.point,
+      ...(districts.congressional ? { censusName: districts.congressional } : {}),
+    });
+    const congressionalName = house.name ?? undefined;
+    if (house.plan && house.name) {
+      districts.provenance.push({ layer: `enacted plan ${house.plan}`, source: "state redistricting file", value: house.name });
+    }
+    const houseSeat = congressionalSeat(stateCode, congressionalName);
 
     const out = [];
     for (const e of elections) {
@@ -181,10 +203,9 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
 
       const mine = races.filter((r) => {
         const seat = r.office.seatLabel ?? r.office.district?.name ?? "";
-        if (r.office.title === "United States Representative") {
-          return !!districts.congressional && seat === districts.congressional.replace("Congressional ", "");
-        }
-        if (r.office.title === "United States Senator") return true; // statewide
+        if (r.office.title === "United States Representative") return !!houseSeat && seat === houseSeat;
+        // Statewide. The election is already this voter's state.
+        if (r.office.title === "United States Senator" || r.office.title === "Governor") return true;
         if (r.office.title.includes("Council")) {
           return !!districts.dallasCouncilPlace && seat === `Place ${districts.dallasCouncilPlace}`;
         }
@@ -213,6 +234,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
 
     // What we could not answer. Named explicitly rather than left as an absence.
     const gaps: string[] = [];
+    if (house.unknownBecause) gaps.push(house.unknownBecause);
     if (districts.stateSenate) gaps.push(`${districts.stateSenate} — state legislative races are not covered yet`);
     if (districts.stateHouse) gaps.push(`${districts.stateHouse} — state legislative races are not covered yet`);
     if (districts.county) gaps.push(`${districts.county} — county races are not covered yet`);
@@ -222,9 +244,10 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
       matched: districts.matchedAddress,
       districts: {
         state: districts.state ?? null,
+        stateCode,
         county: districts.county ?? null,
         place: districts.place ?? null,
-        congressional: districts.congressional ?? null,
+        congressional: congressionalName ?? null,
         stateSenate: districts.stateSenate ?? null,
         stateHouse: districts.stateHouse ?? null,
       },
@@ -241,7 +264,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/elections/upcoming", async () =>
     prisma.election.findMany({
-      where: { electionDate: { gte: new Date() } },
+      where: { electionDate: { gte: new Date() }, slug: { notIn: hiddenElectionSlugs() } },
       orderBy: { electionDate: "asc" },
     }),
   );
@@ -256,7 +279,10 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
    * candidates either is still hidden — that is a seeded shell, not a finding.
    */
   app.get("/elections", async () => {
-    const elections = await prisma.election.findMany({ orderBy: { electionDate: "asc" } });
+    const elections = await prisma.election.findMany({
+      where: { slug: { notIn: hiddenElectionSlugs() } },
+      orderBy: { electionDate: "asc" },
+    });
     const out = [];
     for (const e of elections) {
       const where = { race: { electionId: e.id } };

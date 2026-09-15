@@ -20,9 +20,11 @@
  * because the rate would describe a state that no longer exists.
  */
 import { z } from "zod";
+import { SYNTHETIC_ELECTIONS } from "@civic/core";
 import { prisma } from "@civic/db";
 import { DEFAULT_MAX_COST_CENTS } from "./pipeline-db.js";
 import { MODEL_B, complete, type CompleteFn } from "./llm.js";
+
 
 /** Deliberately the OTHER model. An auditor that is the verifier grades its own work. */
 export const AUDIT_MODEL = process.env.AUDIT_MODEL ?? MODEL_B;
@@ -39,7 +41,9 @@ export const FindingSchema = z.object({
       "SUMMARY_OVERSTATES", // the summary claims more than the quote does
     ])
     .default("NONE"),
-  explanation: z.string().max(800),
+  // No length cap. A cap made the schema reject a long but valid verdict, and a
+  // rejected verdict is a failed call rather than a measurement.
+  explanation: z.string(),
 });
 export type Finding = z.infer<typeof FindingSchema>;
 
@@ -92,6 +96,8 @@ worse than no rate.`;
 export interface AuditReport {
   sampled: number;
   correct: number;
+  /** Calls that failed. Not a verdict either way, so they are left out of the rate. */
+  unmeasured: Array<{ positionId: string; message: string }>;
   errorRate: number;
   faults: Record<string, number>;
   costCents: number;
@@ -153,9 +159,12 @@ export async function auditPublished(opts: AuditOptions = {}): Promise<AuditRepo
         : opts.includeAbsences
           ? {}
           : { stance: { notIn: ["NO_STATED_POSITION", "DECLINED_TO_STATE"] } }),
-      ...(opts.electionSlug
-        ? { candidate: { candidacies: { some: { race: { election: { slug: opts.electionSlug } } } } } }
-        : {}),
+      candidate: {
+        ...(opts.electionSlug
+          ? { candidacies: { some: { race: { election: { slug: opts.electionSlug } } } } }
+          : {}),
+        NOT: { candidacies: { some: { race: { election: { slug: { in: [...SYNTHETIC_ELECTIONS] } } } } } },
+      },
     },
     select: {
       id: true,
@@ -194,6 +203,7 @@ export async function auditPublished(opts: AuditOptions = {}): Promise<AuditRepo
     faults: {},
     costCents: 0,
     errors: [],
+    unmeasured: [],
   };
 
   const queue = [...chosen];
@@ -250,9 +260,10 @@ export async function auditPublished(opts: AuditOptions = {}): Promise<AuditRepo
               sourceUrl: doc.url,
             });
           }
-        } catch {
-          report.sampled++;
-          report.faults.ERROR = (report.faults.ERROR ?? 0) + 1;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          report.unmeasured.push({ positionId: p.id, message: msg.slice(0, 300) });
+          if (/credit balance|authentication_error|invalid x-api-key/i.test(msg)) stopped = true;
         }
         continue;
       }
@@ -294,9 +305,10 @@ export async function auditPublished(opts: AuditOptions = {}): Promise<AuditRepo
           sourceUrl: ev.source.url,
         });
       } catch (err) {
-        report.sampled++;
-        report.faults.ERROR = (report.faults.ERROR ?? 0) + 1;
         const msg = err instanceof Error ? err.message : String(err);
+        // A failed call is not a wrong answer. Counting it as one inflated the first
+        // measured rate: 5 of 119 rows were API failures scored as errors.
+        report.unmeasured.push({ positionId: p.id, message: msg.slice(0, 300) });
         if (/credit balance|authentication_error|invalid x-api-key/i.test(msg)) stopped = true;
       }
     }

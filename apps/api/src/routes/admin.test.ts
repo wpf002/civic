@@ -491,3 +491,28 @@ describe("silence does not replace something said", () => {
     expect((await prisma.position.findUniqueOrThrow({ where: { id: absence.id } })).status).toBe("REJECTED");
   });
 });
+
+describe("correcting a published position", () => {
+  it("keeps the question the corrected row answered", async () => {
+    // A correction that drops its proposition vanishes from every page that lists
+    // answers by question, so the fix hides the answer instead of fixing it.
+    const prop = await prisma.proposition.findFirstOrThrow({ where: { isCurrent: true } });
+    const cand = await prisma.candidate.create({ data: { slug: `${PREFIX}correct`, fullName: "ZZ Correct" } });
+    const old = await prisma.position.create({
+      data: { candidateId: cand.id, issueId: prop.issueId, propositionId: prop.id, stance: "SUPPORT", summary: "too broad", confidence: 0.9, status: "PUBLISHED", publishedAt: new Date() },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/admin/positions/${old.id}/supersede`,
+      headers: AUTH,
+      payload: { stance: "NO_STATED_POSITION", summary: "No stated position." },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().propositionId).toBe(prop.id);
+    expect(res.json().supersedesId).toBe(old.id);
+
+    await prisma.position.deleteMany({ where: { candidateId: cand.id } });
+    await prisma.candidate.delete({ where: { id: cand.id } });
+  });
+});

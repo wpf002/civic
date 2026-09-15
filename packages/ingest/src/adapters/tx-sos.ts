@@ -116,6 +116,8 @@ export function raceKeyForOffice(officeName: string): string | null {
   const house = o.match(/^U\.\s*S\.\s*REPRESENTATIVE DISTRICT (\d{1,2})$/);
   if (house) return `us-house-tx-${String(Number(house[1])).padStart(2, "0")}`;
   if (/^U\.\s*S\.\s*SENATOR$/.test(o)) return "us-senate-tx";
+  // Exactly GOVERNOR. "LIEUTENANT GOVERNOR" is a different office and stays unmapped.
+  if (o === "GOVERNOR") return "governor-tx";
   return null;
 }
 

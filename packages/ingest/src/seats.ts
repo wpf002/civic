@@ -18,6 +18,7 @@
  *   2. Create an Office or a Race. An adapter that can create the row it fails to
  *      find can never fail to find one.
  */
+import { houseSeatLabel, stateByCode } from "@civic/core";
 import { prisma } from "@civic/db";
 import { placeSeatLabel } from "./adapters/dallas-city-secretary.js";
 
@@ -28,9 +29,19 @@ import { placeSeatLabel } from "./adapters/dallas-city-secretary.js";
  * district by arithmetic. An unmapped race key resolves to nothing and quarantines.
  */
 export function federalSeatLabel(raceKey: string): string | null {
-  const house = raceKey.match(/^us-house-[a-z]{2}-(\d{1,2})$/);
-  if (house) return `District ${Number(house[1])}`;
-  if (/^us-senate-[a-z]{2}$/.test(raceKey)) return "Class II";
+  const house = raceKey.match(/^us-house-([a-z]{2})-(\d{1,2})$/);
+  if (house) {
+    const st = stateByCode(house[1]!);
+    if (!st) return null;
+    // The FEC files at-large seats and DC's delegate as district 00.
+    const d = Number(house[2]);
+    if (d === 0) return st.houseSeats === 1 ? houseSeatLabel(st.code, 0) : null;
+    return d <= st.houseSeats ? houseSeatLabel(st.code, d) : null;
+  }
+  const senate = raceKey.match(/^us-senate-([a-z]{2})$/);
+  // Only the class actually on the 2026 ballot. A filer for a seat that is not up
+  // resolves to nothing and quarantines, rather than landing in the wrong race.
+  if (senate) return stateByCode(senate[1]!)?.senate2026 ?? null;
   return null;
 }
 
@@ -45,13 +56,20 @@ export async function resolveFederalSeat(
   electionSlug: string,
   raceKey: string,
 ): Promise<SeatResolution> {
-  const seatLabel = federalSeatLabel(raceKey);
+  const governor = raceKey.match(/^governor-([a-z]{2})$/);
+  const seatLabel = governor
+    ? stateByCode(governor[1]!)?.governor2026
+      ? "Governor"
+      : null
+    : federalSeatLabel(raceKey);
   if (!seatLabel) {
-    return { raceId: null, reason: `"${raceKey}" is not a federal race key.` };
+    return { raceId: null, reason: `"${raceKey}" is not a race on the 2026 ballot.` };
   }
-  const title = raceKey.startsWith("us-senate")
-    ? "United States Senator"
-    : "United States Representative";
+  const title = governor
+    ? "Governor"
+    : raceKey.startsWith("us-senate")
+      ? "United States Senator"
+      : "United States Representative";
 
   const races = await prisma.race.findMany({
     where: { election: { slug: electionSlug }, office: { seatLabel, title } },

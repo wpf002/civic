@@ -69,6 +69,11 @@ describe("rosters from real FEC records", () => {
     const withdrawn = [...page.results, { ...page.results[0]!, candidate_id: "H0TX01999", candidate_status: "N" }];
     expect(toRosters(withdrawn, "TX", 2026, observedAt)[0]!.entries).toHaveLength(4);
   });
+
+  it("skips a record with no name instead of losing the state", () => {
+    const nameless = [...page.results, { ...page.results[0]!, candidate_id: "H6AZ00000", name: null }];
+    expect(toRosters(nameless, "TX", 2026, observedAt)[0]!.entries).toHaveLength(4);
+  });
 });
 
 describe("fetching", () => {

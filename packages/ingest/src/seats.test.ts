@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { prisma } from "@civic/db";
-import { resolveCouncilSeat } from "./seats.js";
+import { federalSeatLabel, resolveCouncilSeat, resolveFederalSeat } from "./seats.js";
 
 /**
  * The Place/District reconciliation, tested against the real fixture database.
@@ -69,6 +69,38 @@ describe("resolving a ballot Place to a race", () => {
       await prisma.race.delete({ where: { id: dupRace.id } });
       await prisma.office.delete({ where: { id: duplicate.id } });
     }
+  });
+});
+
+describe("federal race keys to seat labels", () => {
+  it("numbers ordinary districts", () => {
+    expect(federalSeatLabel("us-house-tx-07")).toBe("District 7");
+  });
+
+  it("maps the FEC's district 00 to at-large and to DC's delegate", () => {
+    expect(federalSeatLabel("us-house-wy-00")).toBe("At-Large");
+    expect(federalSeatLabel("us-house-dc-00")).toBe("Delegate");
+  });
+
+  it("refuses a district a state does not have", () => {
+    // A roster for a seat that does not exist must quarantine, never land somewhere.
+    expect(federalSeatLabel("us-house-wy-02")).toBeNull();
+    expect(federalSeatLabel("us-house-tx-00")).toBeNull();
+    expect(federalSeatLabel("us-house-tx-39")).toBeNull();
+  });
+
+  it("uses the Senate class on the ballot, and nothing when no seat is up", () => {
+    expect(federalSeatLabel("us-senate-tx")).toBe("Class II");
+    expect(federalSeatLabel("us-senate-fl")).toBe("Class III");
+    expect(federalSeatLabel("us-senate-ca")).toBeNull();
+  });
+});
+
+describe("governor race keys", () => {
+  it("only resolves where a governor is on the 2026 ballot", async () => {
+    // North Carolina elects its governor in 2028: nothing to land in, so it quarantines.
+    const nc = await resolveFederalSeat("2026-11-nc", "governor-nc");
+    expect(nc.raceId).toBeNull();
   });
 });
 

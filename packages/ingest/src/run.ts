@@ -120,10 +120,12 @@ export async function persistRun(
     // Compare against the last ACCEPTED snapshot of the SAME basis. Accepted, because
     // otherwise a quarantined bad parse silently becomes the new baseline; same basis,
     // because filed and certified are different observations and comparing them is
-    // not a diff of anything.
+    // not a diff of anything. Same adapter too: the FEC and a state's own filing list
+    // are two different lists, and diffing one against the other read every name the
+    // FEC lacks as a candidate withdrawing — 13 North Carolina races quarantined.
     const basis = opts.basis ?? "FILED";
     const prevRow = await prisma.rosterSnapshot.findFirst({
-      where: { raceId, accepted: true, basis },
+      where: { raceId, accepted: true, basis, adapter: opts.adapter },
       orderBy: { observedAt: "desc" },
     });
     const previous: Roster | null = prevRow

@@ -26,6 +26,7 @@ import { resolveCouncilSeat, resolveFederalSeat } from "./seats.js";
 import { adminSessionToken, proposePairsInRace } from "@civic/core";
 import { createHash } from "node:crypto";
 import { crawlCampaignSite } from "./crawl.js";
+import { KNOWN_PLANS, fetchPlan } from "./adapters/block-plans.js";
 import { diffRoster, nameKey } from "./roster.js";
 
 const program = new Command("civic-ingest");
@@ -88,6 +89,7 @@ program
   .option("--sos-election <id>", "Texas SOS election id (default: 2026 November general)")
   .requiredOption("--election <slug>", "e.g. 2027-11-dallas")
   .requiredOption("--date <yyyy-mm-dd>", "the election date the source must match")
+  .option("--state <xx>", "two-letter state, for the fec adapter", "TX")
   .option("--dry-run")
   .action(async (o) => {
     // An adapter never creates a Race. Unresolvable rosters quarantine instead.
@@ -130,7 +132,7 @@ program
       };
     } else if (o.adapter === "fec") {
       const cycle = Number(String(o.date).slice(0, 4));
-      const run = await fetchFederalRosters("TX", cycle, new Date());
+      const run = await fetchFederalRosters(String(o.state).toUpperCase(), cycle, new Date());
       rosters = run.rosters;
       console.log(
         `basis: ${run.basis} — ${run.candidateCount} statutory candidates across ` +
@@ -823,6 +825,74 @@ program
     await prisma.$disconnect();
     // A job that never fires produces no error anywhere else. This is the error.
     if (bad > 0) process.exit(1);
+  });
+
+program
+  .command("plans")
+  .description("Import enacted district plans (block assignment files) so addresses resolve to 2026 districts.")
+  .option("--state <xx>", "only this state's registered plans")
+  .action(async (o) => {
+    const plans = KNOWN_PLANS.filter((p) => !o.state || p.state === String(o.state).toUpperCase());
+    // A plan taken out of the registry stops answering. That is how a plan a court
+    // blocks after import (Missouri's, in September 2026) is withdrawn.
+    const stale = await prisma.districtPlan.findMany({
+      where: o.state ? { state: String(o.state).toUpperCase() } : {},
+      select: { id: true, state: true, chamber: true, name: true },
+    });
+    for (const row of stale) {
+      if (!plans.some((p) => p.state === row.state && p.chamber === row.chamber && p.name === row.name)) {
+        await prisma.districtPlan.delete({ where: { id: row.id } });
+        console.log(`${row.state} ${row.name}: removed, no longer registered`);
+      }
+    }
+    for (const plan of plans) {
+      const fetched = await fetchPlan(plan);
+      const existing = await prisma.districtPlan.findUnique({
+        where: { state_chamber_name: { state: plan.state, chamber: plan.chamber, name: plan.name } },
+      });
+      if (existing?.sourceHash === fetched.sourceHash) {
+        console.log(`${plan.state} ${plan.name}: unchanged (${existing.blockCount} blocks)`);
+        continue;
+      }
+      // Replace in one transaction. A half-imported plan answers some addresses from
+      // the new map and the rest from nothing.
+      await prisma.$transaction(
+        async (tx) => {
+          if (existing) await tx.districtPlan.delete({ where: { id: existing.id } });
+          const row = await tx.districtPlan.create({
+            data: {
+              state: plan.state,
+              chamber: plan.chamber,
+              name: plan.name,
+              lookup: fetched.lookup,
+              firstElection: new Date(plan.firstElection),
+              sourceUrl: fetched.sourceUrl,
+              sourceHash: fetched.sourceHash,
+              blockCount: fetched.assignments.length,
+            },
+          });
+          for (let i = 0; i < fetched.assignments.length; i += 20_000) {
+            await tx.blockAssignment.createMany({
+              data: fetched.assignments.slice(i, i + 20_000).map((a) => ({ planId: row.id, ...a })),
+            });
+          }
+          for (const shape of fetched.shapes) {
+            await tx.districtShape.create({ data: { planId: row.id, ...shape, polygons: shape.polygons as never } });
+          }
+        },
+        { timeout: 600_000 },
+      );
+      const districts = new Set([...fetched.assignments, ...fetched.shapes].map((a) => a.district)).size;
+      console.log(
+        `${plan.state} ${plan.name}: ${fetched.lookup} — ` +
+          (fetched.lookup === "BLOCKS"
+            ? `${fetched.assignments.length} blocks in ${districts} districts`
+            : fetched.lookup === "SHAPES"
+              ? `${districts} district boundaries`
+              : "registered so the Census layer does not answer for this state"),
+      );
+    }
+    await prisma.$disconnect();
   });
 
 program.parseAsync();

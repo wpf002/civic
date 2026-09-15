@@ -67,11 +67,12 @@ describe("office mapping", () => {
     expect(raceKeyForOffice("U. S. REPRESENTATIVE DISTRICT 1")).toBe("us-house-tx-01");
     expect(raceKeyForOffice("U. S. REPRESENTATIVE DISTRICT 38")).toBe("us-house-tx-38");
     expect(raceKeyForOffice("U. S. SENATOR")).toBe("us-senate-tx");
+    expect(raceKeyForOffice("GOVERNOR")).toBe("governor-tx");
   });
 
   it("returns nothing for offices it does not model, rather than a near match", () => {
     // A county constable roster attached to the wrong race is worse than one that waits.
-    for (const o of ["CONSTABLE PRECINCT 1", "STATE REPRESENTATIVE DISTRICT 1", "COUNTY JUDGE", "GOVERNOR"]) {
+    for (const o of ["CONSTABLE PRECINCT 1", "STATE REPRESENTATIVE DISTRICT 1", "COUNTY JUDGE", "LIEUTENANT GOVERNOR"]) {
       expect(raceKeyForOffice(o)).toBeNull();
     }
   });

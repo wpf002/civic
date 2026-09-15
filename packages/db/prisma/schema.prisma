@@ -663,3 +663,75 @@ model UserReport {
   createdAt  DateTime  @default(now())
   handledAt  DateTime?
 }
+
+// ------------------------------------------------------------------ district plans
+
+/// Census's district layer lags redistricting. Ten states enacted new congressional
+/// maps for 2026 after the layer the geocoder serves (119th Congress) was drawn, so
+/// for those states the geocoder names the wrong House seat: Dallas City Hall is in
+/// District 30 on the Census layer and District 33 on the 2026 Texas plan.
+///
+/// An enacted plan is published as a block assignment file, one row per 2020 census
+/// block. The geocoder returns the block, so the district comes from the plan that
+/// is actually in force and not from the layer that is out of date.
+enum PlanChamber {
+  CONGRESS
+  STATE_UPPER
+  STATE_LOWER
+}
+
+/// How a plan answers a lookup. Most enacting bodies publish a block file; some publish
+/// only boundaries; one (Alabama's 2023 plan) publishes neither in a usable form, and a
+/// plan that cannot answer must still stop the out-of-date Census layer from answering.
+enum PlanLookup {
+  BLOCKS
+  SHAPES
+  UNRESOLVABLE
+}
+
+model DistrictPlan {
+  id            String            @id @default(cuid())
+  state         String // USPS code
+  chamber       PlanChamber
+  name          String // the enacting body's own id, e.g. "PLANC2333"
+  lookup        PlanLookup        @default(BLOCKS)
+  /// The first election held on this plan. A lookup uses the newest plan in force
+  /// on the election date, so a plan for 2028 never answers a 2026 question.
+  firstElection DateTime
+  sourceUrl     String
+  sourceHash    String
+  blockCount    Int
+  importedAt    DateTime          @default(now())
+  blocks        BlockAssignment[]
+  shapes        DistrictShape[]
+
+  @@unique([state, chamber, name])
+}
+
+model BlockAssignment {
+  planId   String
+  plan     DistrictPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  /// 15-digit 2020 census block GEOID.
+  block    String
+  /// As the plan numbers it, without padding: "33". "0" for an at-large seat.
+  district String
+
+  @@id([planId, block])
+}
+
+/// One district's boundary, for plans published only as shapes. WGS84 GeoJSON polygon
+/// or multipolygon coordinates, with a bounding box so a lookup tests few of them.
+model DistrictShape {
+  id       String       @id @default(cuid())
+  planId   String
+  plan     DistrictPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  district String
+  minLon   Float
+  minLat   Float
+  maxLon   Float
+  maxLat   Float
+  /// Array of polygons; each polygon an array of rings; each ring an array of [lon, lat].
+  polygons Json
+
+  @@index([planId])
+}

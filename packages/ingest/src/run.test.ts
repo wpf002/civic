@@ -108,6 +108,19 @@ describe("persistRun", () => {
     expect(task).not.toBeNull();
   });
 
+  it("does not read a second source's shorter list as withdrawals", async () => {
+    // The FEC and a state filing list are different lists of the same race. A name
+    // one of them lacks has not withdrawn from the other.
+    await persistRun({ adapter: "test", electionSlug: ELECTION }, [roster(["Ada Test", "Bo Sample"])], resolve);
+    const out = await persistRun(
+      { adapter: "test-other-source", electionSlug: ELECTION },
+      [roster(["Ada Test"])],
+      resolve,
+    );
+    expect(out.races[0]!.verdict).not.toBe("QUARANTINED");
+    expect(out.races[0]!.removed).toEqual([]);
+  });
+
   it("does not let a quarantined parse become the new baseline", async () => {
     await persistRun({ adapter: "test", electionSlug: ELECTION }, [roster(["Ada Test", "Bo Sample"])], resolve);
     await persistRun({ adapter: "test", electionSlug: ELECTION }, [roster([])], resolve); // bad fetch

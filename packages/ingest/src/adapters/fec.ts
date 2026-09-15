@@ -76,7 +76,7 @@ export function formatFecName(raw: string): string {
 
 export interface FecCandidate {
   candidate_id: string;
-  name: string;
+  name: string | null;
   party: string | null;
   party_full: string | null;
   office: string;
@@ -126,6 +126,9 @@ export function toRosters(
   for (const c of candidates) {
     if (c.candidate_status !== "C") continue; // not a current statutory candidate
     if (c.office !== "H" && c.office !== "S") continue; // presidential is out of scope
+    // Arizona's 2026 list carries a record with no name. It cannot be a ballot line,
+    // and parsing it threw and lost the whole state.
+    if (!c.name?.trim()) continue;
     const raceKey = raceKeyFor(c.office, state, c.district);
     const name = formatFecName(c.name);
 

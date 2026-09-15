@@ -310,6 +310,10 @@ program
 
     const [lo, hi] = wilsonInterval(r.correct, r.sampled);
     console.log(`sampled ${r.sampled} live positions · ${r.correct} correct · ${r.costCents.toFixed(2)}c`);
+    if (r.unmeasured.length) {
+      console.log(`${r.unmeasured.length} call(s) failed and are not in the rate:`);
+      for (const u of r.unmeasured) console.log(`  ${u.positionId}: ${u.message.slice(0, 160)}`);
+    }
     console.log(`error rate ${(100 * r.errorRate).toFixed(1)}%`);
     // A rate from a sample is a range. Reporting the point alone is the kind of
     // precision that misleads whoever relies on it.
