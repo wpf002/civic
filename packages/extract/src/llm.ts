@@ -36,6 +36,12 @@ const PRICING: Record<string, { input: number; output: number; adaptiveThinking:
   "claude-haiku-4-5": { input: 1, output: 5, adaptiveThinking: false },
 };
 
+/** Cents for this many uncached input tokens. Unknown models: 0, never a guess. */
+export function inputCentsFor(model: string, tokens: number): number {
+  const price = PRICING[model];
+  return price ? (tokens / 1_000_000) * price.input * 100 : 0;
+}
+
 /** Whether `model` accepts adaptive thinking. Unknown models: assume not. */
 export function supportsAdaptiveThinking(model: string): boolean {
   return PRICING[model]?.adaptiveThinking ?? false;

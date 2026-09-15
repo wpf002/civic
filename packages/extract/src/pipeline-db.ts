@@ -18,8 +18,9 @@
  */
 import { findVerbatim, type ExtractedPosition } from "@civic/core";
 import { prisma } from "@civic/db";
-import { MODEL_A, MODEL_B, ModelRefusalError, type CompleteFn } from "./llm.js";
-import { extractOnce, reconcile } from "./pipeline.js";
+import { EXTRACT_SYSTEM } from "./prompts/extract-positions.js";
+import { MODEL_A, MODEL_B, ModelRefusalError, inputCentsFor, type CompleteFn } from "./llm.js";
+import { extractOnce, reconcile, renderInput } from "./pipeline.js";
 
 /**
  * What a run may spend when nobody said otherwise, in cents.
@@ -66,6 +67,14 @@ export interface RunOptions {
   maxCostCents?: number | null;
   /** Cap how many sources are processed in a run. */
   limit?: number;
+  /**
+   * Which offices' candidates to read. "top" is federal, governor and statewide;
+   * "legislature" is state senate and house. Absent, both. Kept apart because they
+   * are approved and paid for separately.
+   */
+  tier?: "top" | "legislature";
+  /** Only candidates certified to a ballot, never filers who lost a primary. */
+  certifiedOnly?: boolean;
   modelA?: string;
   modelB?: string;
   dryRun?: boolean;
@@ -109,20 +118,43 @@ export interface RunReport {
  * so it tracks the real cost as prompts and models change, and falls back to the
  * last measured figure when there is no history.
  */
+const LEGISLATURE = ["State Senator", "State Representative"];
+
+/** The sources a run with these options would read. One definition for the run and its quote. */
+export function sourceScope(opts: RunOptions) {
+  const candidacy =
+    opts.electionSlug || opts.tier || opts.certifiedOnly
+      ? {
+          candidacies: {
+            some: {
+              ...(opts.electionSlug ? { race: { election: { slug: opts.electionSlug } } } : {}),
+              ...(opts.tier
+                ? {
+                    race: {
+                      ...(opts.electionSlug ? { election: { slug: opts.electionSlug } } : {}),
+                      office: { title: opts.tier === "legislature" ? { in: LEGISLATURE } : { notIn: LEGISLATURE } },
+                    },
+                  }
+                : {}),
+              ...(opts.certifiedOnly ? { isCertified: true } : {}),
+            },
+          },
+        }
+      : {};
+  return {
+    ...(opts.sourceId ? { id: opts.sourceId } : {}),
+    ...(opts.candidateSlug || Object.keys(candidacy).length
+      ? { candidate: { ...(opts.candidateSlug ? { slug: opts.candidateSlug } : {}), ...candidacy } }
+      : {}),
+    ...(opts.force ? {} : { extractedAt: null }),
+    NOT: { text: "" },
+  };
+}
+
 export async function estimateRunCost(
   opts: RunOptions = {},
 ): Promise<{ sources: number; centsPerSource: number; totalCents: number; basedOn: string }> {
-  const sources = await prisma.source.count({
-    where: {
-      ...(opts.sourceId ? { id: opts.sourceId } : {}),
-      ...(opts.candidateSlug ? { candidate: { slug: opts.candidateSlug } } : {}),
-      ...(opts.electionSlug
-        ? { candidate: { candidacies: { some: { race: { election: { slug: opts.electionSlug } } } } } }
-        : {}),
-      ...(opts.force ? {} : { extractedAt: null }),
-      NOT: { text: "" },
-    },
-  });
+  const sources = await prisma.source.count({ where: sourceScope(opts) });
 
   // Runs of a handful of sources are test fixtures and one-off probes, and their
   // rounded whole-cent costs make the rate look an order of magnitude too low. A real
@@ -185,20 +217,9 @@ export async function runExtraction(opts: RunOptions = {}): Promise<RunReport> {
   }
 
   const sources = await prisma.source.findMany({
-    where: {
-      ...(opts.sourceId ? { id: opts.sourceId } : {}),
-      ...(opts.candidateSlug ? { candidate: { slug: opts.candidateSlug } } : {}),
-      ...(opts.electionSlug
-        ? { candidate: { candidacies: { some: { race: { election: { slug: opts.electionSlug } } } } } }
-        : {}),
-      // A source that has been read is not read again. Keyed on extractedAt, not on
-      // whether it produced evidence: most documents produce only absences, which
-      // create no evidence rows, so an evidence-based check re-read almost everything
-      // at full price on every run.
-      ...(opts.force ? {} : { extractedAt: null }),
-      // Only sources we have text for. A source we could not archive cannot be quoted.
-      NOT: { text: "" },
-    },
+    // A source that has been read is not read again (extractedAt), and only sources we
+    // have text for: a source we could not archive cannot be quoted. See sourceScope.
+    where: sourceScope(opts),
     include: { candidate: true },
     orderBy: { capturedAt: "asc" },
     ...(opts.limit ? { take: opts.limit } : {}),
@@ -506,4 +527,96 @@ async function writeDraft(
     },
   });
   return true;
+}
+
+
+/**
+ * What a run will cost, with the input side counted exactly.
+ *
+ * Every source's request is sent to the free token-counting endpoint for both models,
+ * so the input cost is the real figure. Output cannot be counted before it is written,
+ * so it comes from the most recent real run: that run's own sources are counted the
+ * same way, the input subtracted from what it actually cost, and the remainder divided
+ * by its sources. Verification is added at the rate the last verify pass measured.
+ */
+export async function exactRunCost(
+  opts: RunOptions,
+  count: (req: { model: string; system: string; input: string }) => Promise<number>,
+  onProgress?: (done: number, total: number) => void,
+): Promise<{
+  sources: number;
+  inputTokens: { a: number; b: number };
+  inputCents: number;
+  outputCents: number;
+  verifyCents: number;
+  totalCents: number;
+  outputBasis: string;
+}> {
+  const modelA = opts.modelA ?? MODEL_A;
+  const modelB = opts.modelB ?? MODEL_B;
+  const issues = await prisma.issue.findMany({
+    orderBy: { sortOrder: "asc" },
+    include: { propositions: { where: { isCurrent: true }, take: 1 } },
+  });
+  const live = issues.filter((i) => i.propositions.length > 0);
+  const propositions = live.map((i) => ({
+    issueSlug: i.slug,
+    text: i.propositions[0]!.text,
+    yesMeans: i.propositions[0]!.yesMeans,
+    noMeans: i.propositions[0]!.noMeans,
+  }));
+  const issueSlugs = live.map((i) => i.slug);
+
+  const tokensFor = async (texts: string[], tick?: () => void) => {
+    let a = 0;
+    let b = 0;
+    const queue = [...texts];
+    const worker = async () => {
+      for (;;) {
+        const text = queue.shift();
+        if (text === undefined) return;
+        const input = renderInput({ sourceText: text, issueSlugs, propositions });
+        a += await count({ model: modelA, system: EXTRACT_SYSTEM, input });
+        b += await count({ model: modelB, system: EXTRACT_SYSTEM, input });
+        tick?.();
+      }
+    };
+    await Promise.all(Array.from({ length: 4 }, worker));
+    return { a, b };
+  };
+
+  const sources = await prisma.source.findMany({ where: sourceScope(opts), select: { text: true } });
+  let done = 0;
+  const inputTokens = await tokensFor(sources.map((s) => s.text), () => onProgress?.(++done, sources.length));
+  const inputCents = inputCentsFor(modelA, inputTokens.a) + inputCentsFor(modelB, inputTokens.b);
+
+  // Output, calibrated on the most recent real run that recorded its sources.
+  const reference = await prisma.extractRun.findFirst({
+    where: { finishedAt: { not: null }, costCents: { gt: 0 }, sourceCount: { gte: 20 } },
+    orderBy: { startedAt: "desc" },
+  });
+  let outputPerSource = 0;
+  let outputBasis = "no reference run; output not estimated";
+  if (reference) {
+    const refSources = await prisma.source.findMany({ where: { extractRunId: reference.id }, select: { text: true } });
+    if (refSources.length > 0) {
+      const refTokens = await tokensFor(refSources.map((s) => s.text));
+      const refInput = inputCentsFor(modelA, refTokens.a) + inputCentsFor(modelB, refTokens.b);
+      outputPerSource = Math.max(0, reference.costCents - refInput) / refSources.length;
+      outputBasis = `run of ${refSources.length} sources on ${reference.startedAt.toISOString().slice(0, 10)}: ${reference.costCents}c, of which ${refInput.toFixed(0)}c input`;
+    }
+  }
+  const outputCents = outputPerSource * sources.length;
+  // Measured: the North Carolina verify pass cost 39.90c for the 82 sources that run read.
+  const verifyCents = (39.9 / 82) * sources.length;
+
+  return {
+    sources: sources.length,
+    inputTokens,
+    inputCents,
+    outputCents,
+    verifyCents,
+    totalCents: inputCents + outputCents + verifyCents,
+    outputBasis,
+  };
 }

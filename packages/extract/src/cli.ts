@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { prisma } from "@civic/db";
-import { MODEL_A, MODEL_B } from "./llm.js";
+import { MODEL_A, MODEL_B, countInputTokens } from "./llm.js";
 import { runExtraction } from "./pipeline-db.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import {
@@ -17,8 +17,8 @@ import {
 import { VERIFY_MODEL, directionRatio, runVerification } from "./verify.js";
 import { proposeMappings, verifyMappings, type BillInput } from "./bills.js";
 import { AUDIT_MODEL, auditPublished, wilsonInterval } from "./audit.js";
-import { estimateRunCost } from "./pipeline-db.js";
-import { adminSessionToken } from "@civic/core";
+import { estimateRunCost, exactRunCost } from "./pipeline-db.js";
+import { LenientExtractionOutputSchema, adminSessionToken } from "@civic/core";
 
 const program = new Command("civic-extract");
 
@@ -37,14 +37,33 @@ program
   .option("--model-b <id>", "second, independent extractor model", MODEL_B)
   .option("--concurrency <n>", "sources processed at once", (v) => Number(v), 6)
   .option("--estimate", "print what this run would cost and exit, spending nothing")
+  .option("--quote", "count every page's input tokens exactly (free) and print the cost, spending nothing")
+  .option("--tier <tier>", "top (federal, governor, statewide) or legislature")
+  .option("--certified-only", "only candidates certified to a ballot")
   .option("--dry-run", "report what would happen and write nothing")
   .action(async (o) => {
+    if (o.tier && o.tier !== "top" && o.tier !== "legislature") throw new Error("--tier is top or legislature");
     const scope = {
       ...(o.source ? { sourceId: o.source } : {}),
       ...(o.candidate ? { candidateSlug: o.candidate } : {}),
       ...(o.election ? { electionSlug: o.election } : {}),
       ...(o.force ? { force: true } : {}),
+      ...(o.tier ? { tier: o.tier as "top" | "legislature" } : {}),
+      ...(o.certifiedOnly ? { certifiedOnly: true } : {}),
     };
+    if (o.quote) {
+      const q = await exactRunCost(scope, (r) => countInputTokens({ ...r, schema: LenientExtractionOutputSchema }), (d, t) => {
+        if (d % 25 === 0 || d === t) process.stdout.write(`  counted ${d}/${t}\r`);
+      });
+      console.log(`\n${q.sources} sources · input ${q.inputTokens.a.toLocaleString()} + ${q.inputTokens.b.toLocaleString()} tokens`);
+      console.log(`  input   ${q.inputCents.toFixed(2)}c (exact)`);
+      console.log(`  output  ${q.outputCents.toFixed(2)}c (measured: ${q.outputBasis})`);
+      console.log(`  verify  ${q.verifyCents.toFixed(2)}c (measured on the last verify pass)`);
+      console.log(`  total   ${q.totalCents.toFixed(2)}c`);
+      console.log("Nothing was spent.");
+      await prisma.$disconnect();
+      return;
+    }
     const est = await estimateRunCost(scope);
     console.log(
       `${est.sources} sources to read · about $${(est.totalCents / 100).toFixed(2)} ` +
