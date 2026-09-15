@@ -173,6 +173,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     const houseSeat = congressionalSeat(stateCode, congressionalName);
 
     const out = [];
+    const unlisted: string[] = [];
     for (const e of elections) {
       // Only races whose district this address is actually in. A race we hold for
       // another district is not this voter's race.
@@ -221,10 +222,18 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
         return false;
       });
 
-      if (mine.length === 0) continue;
+      // A race with no certified candidates is a race we know is on the ballot and
+      // whose candidate list we do not have. Listing it empty reads as "nobody is
+      // running"; it goes under notCovered instead.
+      for (const r of mine.filter((r) => r.candidacies.length === 0)) {
+        const seat = r.office.seatLabel && r.office.seatLabel !== r.office.title ? ` (${r.office.seatLabel})` : "";
+        unlisted.push(`${r.office.title}${seat} — the certified candidate list for this race isn't loaded yet`);
+      }
+      const listed = mine.filter((r) => r.candidacies.length > 0);
+      if (listed.length === 0) continue;
       out.push({
         election: { slug: e.slug, name: e.name, electionDate: e.electionDate },
-        races: mine.map((r) => ({
+        races: listed.map((r) => ({
           office: r.office.title,
           seat: r.office.seatLabel ?? r.office.district?.name ?? null,
           candidates: r.candidacies.map((c) => ({
@@ -239,7 +248,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     }
 
     // What we could not answer. Named explicitly rather than left as an absence.
-    const gaps: string[] = [];
+    const gaps: string[] = [...unlisted];
     if (house.unknownBecause) gaps.push(house.unknownBecause);
     // A chamber is covered once any of its seats is on file for this election.
     const covered = async (title: string) =>
@@ -293,6 +302,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
       orderBy: { electionDate: "asc" },
     });
     const out = [];
+    const unlisted: string[] = [];
     for (const e of elections) {
       const where = { race: { electionId: e.id } };
       const [candidates, races, positions, silent] = await Promise.all([
