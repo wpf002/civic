@@ -281,6 +281,7 @@ program
   .option("--congress <n>", "Congress number for the official-site lookup", (v) => Number(v), 119)
   .option("--only-missing", "look up only candidates that have no website yet")
   .option("--guess", "for candidates no record names a site for, try likely domains and prove them")
+  .option("--certified-only", "only candidates on the certified ballot")
   .option("--dry-run")
   .action(async (o) => {
     const found = new Map<string, CandidateSite>();
@@ -290,8 +291,23 @@ program
     // this command did that and spent an entire hourly quota rediscovering ids that
     // were already stored.
     const candidates = await prisma.candidate.findMany({
-      where: { candidacies: { some: { race: { election: { slug: o.election } } } } },
-      select: { id: true, slug: true, fullName: true, websiteUrl: true, externalIds: true },
+      where: {
+        candidacies: {
+          some: { race: { election: { slug: o.election } }, ...(o.certifiedOnly ? { isCertified: true } : {}) },
+        },
+      },
+      select: {
+        id: true,
+        slug: true,
+        fullName: true,
+        websiteUrl: true,
+        externalIds: true,
+        candidacies: {
+          where: { race: { election: { slug: o.election } } },
+          select: { race: { select: { office: { select: { title: true } } } } },
+          take: 1,
+        },
+      },
     });
 
     // 1. FEC Form 1. The campaign told the government its own address, which is the
@@ -369,18 +385,12 @@ program
       };
       let guessed = 0;
       let disproved = 0;
-      // Senate and House produce different domain stems ("forsenate" vs "forcongress"),
-      // so the office has to come from the race rather than be assumed.
-      const senateOnly = await prisma.candidacy.count({
-        where: { race: { election: { slug: o.election }, office: { title: "United States Senator" } } },
-      });
-      const guessOffice =
-        senateOnly > 0 && candidates.length === senateOnly
-          ? "United States Senator"
-          : "United States Representative";
-      for (const c of candidates) {
-        if (c.websiteUrl || found.has(nameKey(c.fullName))) continue;
-        const guessOpts = { fullName: c.fullName, state: o.state, office: guessOffice };
+      // The office comes from each candidate's own race: a state representative's site
+      // is not "lastnameforcongress.com", and the proof has to look for the right office.
+      const pending = candidates.filter((c) => !c.websiteUrl && !found.has(nameKey(c.fullName)));
+      const guessOne = async (c: (typeof candidates)[number]) => {
+        const office = c.candidacies[0]?.race.office.title ?? "United States Representative";
+        const guessOpts = { fullName: c.fullName, state: o.state, office };
         for (const domain of candidateDomains(guessOpts).slice(0, 10)) {
           const url = `https://${domain}`;
           if (isNeverACandidateSite(url)) continue;
@@ -396,11 +406,16 @@ program
               assertedByUrl: res.url,
             });
             guessed++;
-            break;
+            return;
           } catch {
             // A domain that does not resolve is the common case, not an error.
           }
         }
+      };
+      // Eight candidates at a time. Each tries up to ten domains in order, so one
+      // candidate never fetches two guesses at once.
+      for (let i = 0; i < pending.length; i += 8) {
+        await Promise.all(pending.slice(i, i + 8).map(guessOne));
       }
       console.log(`guessed+proved: ${guessed}  (${disproved} domains existed and were refused)`);
     }

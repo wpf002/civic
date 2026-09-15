@@ -73,3 +73,25 @@ describe("hosts that are never a candidate's own site", () => {
     expect(isNeverACandidateSite("https://mealerforcongress.com/")).toBe(false);
   });
 });
+
+describe("state offices and states other than Texas", () => {
+  it("guesses domains for the office the candidate is running for", async () => {
+    const { candidateDomains } = await import("./site-guess.js");
+    const rep = candidateDomains({ fullName: "Maggy Krell", state: "CA", office: "State Representative" });
+    expect(rep).toContain("krellforassembly.com");
+    expect(rep.some((d) => d.includes("congress"))).toBe(false);
+    expect(candidateDomains({ fullName: "Byron Donalds", state: "FL", office: "Governor" })).toContain("donaldsforgovernor.com");
+  });
+
+  it("proves jurisdiction by the state's name, not its two-letter code", async () => {
+    const { provesCandidate } = await import("./site-guess.js");
+    // "ca" is inside "campaign"; the old check passed any page for any California candidate.
+    const page =
+      "Jane Example campaign. Paid for by Jane Example. " +
+      "A local bakery with a long history of great cakes and a friendly staff who love their town. ".repeat(3);
+    expect(provesCandidate(page, "", { fullName: "Jane Example", state: "CA", office: "State Senator" }).accepted).toBe(false);
+    expect(
+      provesCandidate(page + " Running for State Senate in California.", "", { fullName: "Jane Example", state: "CA", office: "State Senator" }).accepted,
+    ).toBe(true);
+  });
+});

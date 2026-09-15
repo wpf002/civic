@@ -17,6 +17,7 @@
  * This produces false negatives freely and false positives only if a page actively
  * impersonates a candidate for their own office.
  */
+import { stateByCode } from "@civic/core";
 export interface GuessOptions {
   fullName: string;
   /** "TX", used to prove the page is about the right jurisdiction. */
@@ -48,18 +49,11 @@ export function candidateDomains(opts: GuessOptions): string[] {
   const { first, last } = nameParts(opts.fullName);
   if (!first || !last) return [];
   const year = opts.year ?? 2026;
-  const office = /senat/i.test(opts.office) ? "senate" : "congress";
-
-  const stems = [
-    `${first}${last}`,
-    `${last}for${office}`,
-    `${first}for${office}`,
-    `${first}${last}for${office}`,
-    `${first}${last}${year}`,
-    `vote${last}`,
-    `${last}${year}`,
-    `${first}for${opts.state.toLowerCase()}`,
-  ];
+  const stems = [`${first}${last}`];
+  for (const office of officeStems(opts.office)) {
+    stems.push(`${last}for${office}`, `${first}for${office}`, `${first}${last}for${office}`);
+  }
+  stems.push(`${first}${last}${year}`, `vote${last}`, `${last}${year}`, `${first}for${opts.state.toLowerCase()}`);
 
   const seen = new Set<string>();
   const out: string[] = [];
@@ -72,6 +66,26 @@ export function candidateDomains(opts: GuessOptions): string[] {
     }
   }
   return out;
+}
+
+/** The words a campaign puts after "for" in its domain, by office. */
+export function officeStems(office: string): string[] {
+  if (/^United States Senator/i.test(office)) return ["senate"];
+  if (/^United States Representative/i.test(office)) return ["congress"];
+  if (/^Governor$/i.test(office)) return ["governor"];
+  if (/^State Senator$/i.test(office)) return ["senate", "statesenate"];
+  if (/^State Representative$/i.test(office)) return ["staterep", "house", "assembly"];
+  if (/Attorney General/i.test(office)) return ["ag", "attorneygeneral"];
+  return [office.toLowerCase().replace(/[^a-z]/g, "").slice(0, 20)];
+}
+
+/** Words that tie a page to the office, for the proof. */
+function officeWords(office: string): string[] {
+  if (/^United States Senator/i.test(office)) return ["senate"];
+  if (/^United States Representative/i.test(office)) return ["congress", "house of representatives"];
+  if (/^State Senator$/i.test(office)) return ["state senate", "senate district"];
+  if (/^State Representative$/i.test(office)) return ["state house", "house district", "state representative", "assembly", "legislature"];
+  return [office.toLowerCase()];
 }
 
 /** Hosts that are never a candidate's own site, however well the name matches. */
@@ -123,12 +137,12 @@ export function provesCandidate(text: string, html: string, opts: GuessOptions):
     return { accepted: false, why: `page does not name ${opts.fullName}` };
   }
 
-  const office = /senat/i.test(opts.office) ? "senate" : "congress";
+  // The state's name, never its two-letter code: "ca" appears in nearly any page.
+  const stateName = (stateByCode(opts.state)?.name ?? opts.state).toLowerCase();
   const jurisdiction =
-    body.includes(office) ||
+    officeWords(opts.office).some((w) => body.includes(w)) ||
     body.includes("district") ||
-    body.includes("house of representatives") ||
-    body.includes(opts.state.toLowerCase() === "tx" ? "texas" : opts.state.toLowerCase());
+    body.includes(stateName);
 
   if (!jurisdiction) {
     return { accepted: false, why: "page names the person but nothing about the office" };
@@ -137,7 +151,7 @@ export function provesCandidate(text: string, html: string, opts: GuessOptions):
   // A campaign page says so. Without this a personal or business site with the right
   // name and a mention of Texas would pass.
   const campaigning =
-    /\b(campaign|for congress|for senate|elect|vote for|ballot|running for|paid for by)\b/i.test(text);
+    /\b(campaign|for congress|for senate|for governor|for state (house|senate|representative)|for assembly|elect|vote for|ballot|running for|paid for by)\b/i.test(text);
   if (!campaigning) {
     return { accepted: false, why: "page names the person and the place but is not a campaign" };
   }
