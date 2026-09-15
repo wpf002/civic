@@ -12,37 +12,49 @@ and covered, the app works. If it isn't, nothing else matters.
 spans of an archived document, and absence is shown as absence. The system cannot express an opinion
 because there is nowhere for one to go.
 
-Last revised 2026-09-08.
+Last revised 2026-09-15.
 
 ---
+
+## Version 1 — the November 3 2026 general election, every state  ← current
+
+Texas early voting starts October 19, so Version 1 is due October 16. Phases below are lettered
+to keep them apart from the numbered history that follows.
+
+| Phase | Work | Done when | Status |
+|---|---|---|---|
+| **A. Finish Phase 5** | Audit stated positions and absences; clear the review queue; correct what the audit found | The live error rate is measured for both kinds of claim | **Met.** See Phase 5 |
+| **B. Every federal race** | 436 House seats and 35 Senate races in all 50 states and DC; House districts from the maps in force | Any US address shows its correct House and Senate candidates | Races, districts and FEC filers done. Certified candidates in 6 states. **The other 45 need ballot data** |
+| **C. Governor and statewide** | 36 governor races and statewide officers | Every state loaded, or marked not covered with the reason | 6 states loaded from their certified lists |
+| **D. Positions nationwide** | Sites, crawl, extract, verify, publish, one state at a time | Every federal and governor candidate with a website has been read | Not started. Each state's cost is quoted exactly before it runs |
+| ~~E. Questionnaires~~ | | | **Dropped** 2026-09-15. Campaigns would not answer an unknown sender |
+| **F. Legislature and local** | Where a state's own list includes them | Candidate lists loaded; positions per state on approval | Legislatures loaded for TX, NC, MN, CO, ME |
+
+**House districts are not the Census layer's.** Ten states drew new congressional maps for 2026
+after the layer the Census geocoder serves. For TX, NC, CA, FL and LA the district comes from the
+enacted plan's block assignment file; for OH, UT and TN from the boundaries the state's GIS office
+publishes. Alabama's plan is published only as a PDF, so an Alabama address is told its House
+district is unknown instead of being shown the old one. Missouri enacted a map, a court barred it
+on September 3 2026, and the Secretary of State has since directed counties to the 2022 map, which
+is the Census layer. Every plan's status is rechecked before the election.
+
+**Ballot data for the other 45 states** comes from Google's Civic Information API, which relays
+what state and local election officials supply. The reader is built: one public library address
+per House district, placed by the plan in force (429 of 436 districts have one). It needs a
+`GOOGLE_CIVIC_API_KEY`. A state with no data there needs its own certified list.
 
 ## Where things actually stand
 
 | | |
 |---|---|
-| Elections with real data | Texas general, Nov 3 2026 |
-| Races modelled | 39 (38 US House + 1 Senate) |
-| Certified candidates | 98 |
-| Candidate websites found | 191 of 270 |
-| Pages archived | 246 across 351 sources |
-| **Published positions** | **8,127 — 162 stated, 7,965 "no stated position"** |
-| Support : oppose | 1.5 : 1 (was 19.7 : 1 before propositions) |
-| States with a roster adapter | 5 — TX, NC, MN, ME, CO |
-| Roll-call votes recorded | 3,936 across 164 bills |
-| Jurisdictions available as a spine | 56,000+ via OCD division ids |
+| Elections with races | 51 — every state and DC, November 3 2026 |
+| Races | 1,352 — 507 federal and governor, 845 statewide and legislative |
+| Candidates on file | 4,255, of whom 1,878 are certified to a ballot (TX 469, MN 427, NC 366, ME 352, CO 246, SD 18) |
+| District plans in force | 9 states registered |
+| **Published positions** | **2,556 — 56 stated, 2,500 "no stated position"** |
+| Stated-position error rate | 5 wrong of 43–45 real rows audited, about 11%. All 5 corrected |
+| Absence error rate | 1 wrong of 57 audited, 1.8%; 95% range 0.3%–9.3% |
 | Admin access | reviewer accounts, scrypt + server-side sessions |
-| Tests | 314 |
-
-Working end to end and live: certified ballot → candidate websites → crawled policy pages →
-archived sources → two-model extraction against propositions → adversarial verification →
-publication → address lookup → issue pages showing the question and the answer.
-
-**Phase 1 is met.** A voter in a covered Texas district sees every certified candidate, each
-candidate's answer or an honest "no stated position", and the archived source behind every quote.
-Coverage of certified candidates with at least one stated position sits just under the 30% kill
-criterion at 26%, which is why Phase 2 stayed mandatory and was built.
-
----
 
 ## The shape of the problem
 
@@ -66,7 +78,7 @@ rows, or a missing sheriff's race looks like a data error.
 
 ---
 
-## Phase 1 — Make one election real, end to end  ← current
+## Phase 1 — Make one election real, end to end
 
 Texas, November 3 2026. Federal races only. The point is to publish something true, not something big.
 
@@ -237,6 +249,12 @@ adding people.
 
 **Done when:** publishing a race's positions takes minutes, and the error rate of published positions
 is measured rather than assumed.
+
+**Met 2026-09-15.** Every live stated position was audited (59, of which 14 are the synthetic Dallas
+fixture and excluded) and a seeded sample of 60 absences, each read against every page archived for
+the candidate. Stated: 5 wrong among the real rows, all corrected by superseding rows. Absences: 1
+missed position in 57. 5 of 119 calls failed and are left out of both rates rather than counted as
+errors. Cost 89.55c.
 
 ---
 
