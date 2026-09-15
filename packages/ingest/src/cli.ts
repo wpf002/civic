@@ -26,6 +26,10 @@ import { resolveCouncilSeat, resolveFederalSeat } from "./seats.js";
 import { adminSessionToken, proposePairsInRace } from "@civic/core";
 import { createHash } from "node:crypto";
 import { crawlCampaignSite } from "./crawl.js";
+import { US_STATES, congressionalSeat } from "@civic/core";
+import { censusNameFor, fetchLibraries, oneLine, pickPerDistrict, type Library } from "./adapters/ballot-addresses.js";
+import { electionQuery, toRosters as toCivicRosters, voterInfo, type CivicContest } from "./adapters/google-civic.js";
+import { houseDistrict } from "./plan-lookup.js";
 import { NOVEMBER_2026 as MN_NOVEMBER_2026, fetchMnRoster } from "./adapters/mn-sos.js";
 import { fetchStateRoster } from "./adapters/xlsx-states.js";
 import { NOVEMBER_2026_EID as SD_NOVEMBER_2026_EID, fetchSdRoster } from "./adapters/sd-sos.js";
@@ -917,6 +921,87 @@ program
               ? `${districts} district boundaries`
               : "registered so the Census layer does not answer for this state"),
       );
+    }
+    await prisma.$disconnect();
+  });
+
+program
+  .command("ballots")
+  .description("Read each state's November 2026 ballot from Google's Civic Information API, one library address per House district.")
+  .option("--state <xx>", "one state; omit for every state without its own certified list")
+  .option("--dry-run", "read and report, write nothing")
+  .action(async (o) => {
+    const apiKey = process.env.GOOGLE_CIVIC_API_KEY;
+    if (!apiKey) {
+      throw new Error("GOOGLE_CIVIC_API_KEY is not set. See the key steps in docs/INGEST.md.");
+    }
+    // States with their own certified list keep it. A state's own list outranks a
+    // relay of it.
+    const OWN_LIST = new Set(["TX", "NC", "MN", "CO", "SD", "ME"]);
+    const states = US_STATES.map((st) => st.code).filter((c) => (o.state ? c === String(o.state).toUpperCase() : !OWN_LIST.has(c)));
+
+    const elections = await electionQuery(apiKey);
+    const general = elections.find((e) => e.electionDay === "2026-11-03" && e.ocdDivisionId === "ocd-division/country:us");
+    if (!general) {
+      console.log("No November 3 2026 general election listed yet. Listed:", elections.map((e) => `${e.id} ${e.electionDay} ${e.name}`).join("; "));
+      await prisma.$disconnect();
+      return;
+    }
+    console.log(`election ${general.id}: ${general.name}`);
+
+    const libraries = await fetchLibraries();
+    const electionDay = new Date("2026-11-03");
+
+    for (const code of states) {
+      const mine = libraries.filter((l) => l.state === code);
+      const placed: Array<{ library: Library; seat: string }> = [];
+      for (const l of mine) {
+        const censusName = censusNameFor(l.state, l.cd119);
+        const h = await houseDistrict(code, electionDay, {
+          ...(l.block ? { block: l.block } : {}),
+          point: { lat: l.lat, lon: l.lon },
+          ...(censusName ? { censusName } : {}),
+        });
+        const seat = congressionalSeat(code, h.name ?? undefined);
+        if (seat) placed.push({ library: l, seat });
+      }
+      // Where the plan can't place addresses (Alabama), ask at a spread of libraries
+      // and let the ballot say which district each is in.
+      const picks = placed.length > 0 ? [...pickPerDistrict(placed).values()].flat() : mine.slice(0, 40);
+
+      const readings: Array<{ address: string; contests: CivicContest[] }> = [];
+      for (const lib of picks) {
+        const info = await voterInfo(oneLine(lib), general.id, apiKey, { officialOnly: true });
+        readings.push({ address: oneLine(lib), contests: info.contests });
+      }
+      const withContests = readings.filter((r) => r.contests.length > 0).length;
+      const run = toCivicRosters(code, readings, "https://www.googleapis.com/civicinfo/v2/voterinfo", new Date());
+      const seeded = await prisma.race.count({ where: { election: { slug: `2026-11-${code.toLowerCase()}` } } });
+      console.log(
+        `${code}: ${withContests}/${readings.length} addresses returned contests · ${run.rosters.length}/${seeded} races read` +
+          (run.conflicts.length ? ` · CONFLICTS ${run.conflicts.join(", ")}` : "") +
+          (run.allOfficial ? "" : " · some contests not from an official source"),
+      );
+      if (o.dryRun || run.rosters.length === 0) continue;
+
+      const out = await persistRun(
+        { adapter: "google-civic", electionSlug: `2026-11-${code.toLowerCase()}`, basis: run.allOfficial ? "CERTIFIED" : "FILED" },
+        run.rosters,
+        async (raceKey) => (await resolveFederalSeat(`2026-11-${code.toLowerCase()}`, raceKey)).raceId,
+      );
+      for (const r of out.races) if (r.verdict === "QUARANTINED") console.log(`  ${r.raceKey} QUARANTINED: ${r.reasons.join("; ")}`);
+
+      // The election officials' own campaign URL, only where we hold none. A site
+      // found another way is never replaced by this.
+      const seen = new Set<string>();
+      for (const w of run.websites) {
+        if (seen.has(w.key)) continue;
+        seen.add(w.key);
+        await prisma.candidate.updateMany({
+          where: { slug: w.key.replace(/\s+/g, "-"), websiteUrl: null },
+          data: { websiteUrl: w.url },
+        });
+      }
     }
     await prisma.$disconnect();
   });

@@ -1,0 +1,47 @@
+{
+  "_note": "Shaped from the documented voterInfoQuery response, not captured from the API. Replace with a real response once GOOGLE_CIVIC_API_KEY is set.",
+  "kind": "civicinfo#voterInfoResponse",
+  "election": { "id": "9000", "name": "General Election", "electionDay": "2026-11-03", "ocdDivisionId": "ocd-division/country:us" },
+  "contests": [
+    {
+      "type": "General",
+      "office": "U.S. Senate",
+      "level": ["country"],
+      "roles": ["legislatorUpperBody"],
+      "district": { "name": "Ohio", "scope": "statewide", "id": "ocd-division/country:us/state:oh" },
+      "candidates": [
+        { "name": "Jane  Example", "party": "Democratic Party", "candidateUrl": "https://example.org/jane", "phone": "(555) 555-0100", "email": "jane@example.org", "channels": [{ "type": "Facebook", "id": "janeexample" }] },
+        { "name": "John Example", "party": "Republican Party" }
+      ],
+      "sources": [{ "name": "Ohio Secretary of State", "official": true }]
+    },
+    {
+      "type": "General",
+      "office": "U.S. House of Representatives - District 15",
+      "level": ["country"],
+      "roles": ["legislatorLowerBody"],
+      "district": { "name": "Ohio's 15th congressional district", "scope": "congressional", "id": "ocd-division/country:us/state:oh/cd:15" },
+      "candidates": [{ "name": "Pat Example", "party": "Libertarian Party", "candidateUrl": "not a url" }],
+      "sources": [{ "name": "Ohio Secretary of State", "official": true }]
+    },
+    {
+      "type": "General",
+      "office": "Governor",
+      "level": ["administrativeArea1"],
+      "roles": ["headOfGovernment"],
+      "district": { "name": "Ohio", "scope": "statewide", "id": "ocd-division/country:us/state:oh" },
+      "candidates": [{ "name": "Sam Example", "party": "Independent" }],
+      "sources": [{ "name": "Ballot Information Project", "official": false }]
+    },
+    {
+      "type": "General",
+      "office": "Franklin County Commissioner",
+      "level": ["administrativeArea2"],
+      "roles": ["legislatorUpperBody"],
+      "district": { "name": "Franklin County", "scope": "countywide", "id": "ocd-division/country:us/state:oh/county:franklin" },
+      "candidates": [{ "name": "Lee Example", "party": "Republican Party" }],
+      "sources": [{ "name": "Franklin County Board of Elections", "official": true }]
+    },
+    { "type": "Referendum", "referendumTitle": "Issue 1" }
+  ]
+}

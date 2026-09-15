@@ -2,8 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma, type Prisma } from "@civic/db";
 import { congressionalSeat, hiddenElectionSlugs, matchCandidates, stateByName } from "@civic/core";
-import { resolveDistricts } from "@civic/ingest";
-import { houseDistrict } from "../plan-lookup.js";
+import { houseDistrict, resolveDistricts } from "@civic/ingest";
 
 /**
  * Read-only. Only PUBLISHED positions ever leave this process — enforced in every
