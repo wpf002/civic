@@ -48,6 +48,22 @@ export function supportsAdaptiveThinking(model: string): boolean {
 }
 
 /**
+ * The user turn, with `cachedInput` (when present) in its own block behind a cache
+ * breakpoint and the varying input after it. Shared by `complete` and
+ * `countInputTokens` so the request that is counted is the request that is sent.
+ *
+ * Caching is a prefix match: the breakpoint must sit at the END of the shared part,
+ * never after the document, or every call writes a distinct entry and none is read.
+ */
+function userContent(req: Pick<CompleteRequest<unknown>, "cachedInput" | "input">) {
+  if (!req.cachedInput) return req.input;
+  return [
+    { type: "text" as const, text: req.cachedInput, cache_control: { type: "ephemeral" as const } },
+    { type: "text" as const, text: req.input },
+  ];
+}
+
+/**
  * A safety classifier declined the request. Not a crash and not a retry: the
  * source goes to the review queue for a human to read. We deliberately do not
  * use server-side refusal fallbacks here — silently completing on a different
@@ -74,6 +90,15 @@ export class ModelOutputError extends Error {
 export interface CompleteRequest<T> {
   model: string;
   system: string;
+  /**
+   * Stable text that opens the user turn and repeats across calls — the proposition
+   * list, which is identical for every source at the same jurisdiction level. Sent
+   * as its own block behind a cache breakpoint, so it bills at ~0.1x after the first
+   * call instead of full price on every one. Leave unset when nothing repeats: a
+   * breakpoint on content that is never reused only adds the 1.25x write premium.
+   */
+  cachedInput?: string;
+  /** The part that varies per call (the document), placed after the breakpoint. */
   input: string;
   /** The model is constrained to this shape server-side, then re-validated here. */
   schema: ZodType<T>;
@@ -134,12 +159,14 @@ export const complete: CompleteFn = async <T>(req: CompleteRequest<T>): Promise<
     model: req.model,
     max_tokens: req.maxTokens ?? 16000,
     ...(supportsAdaptiveThinking(req.model) ? { thinking: { type: "adaptive" as const } } : {}),
-    // The system prompt is byte-identical across every call in a run — the same
-    // instructions and the same twenty propositions, sent once per source per model.
-    // A 466-source run sent it 932 times and paid full price each time. Cached, a
-    // repeat read costs a tenth of that, and the only cost is the first write.
+    // Two breakpoints, one per stable layer. The system prompt (~2,000 tokens) is
+    // byte-identical across every call. The proposition list (~2,900 tokens for
+    // twenty) is identical for every source at a jurisdiction level but lives in the
+    // user turn, not here — this comment used to say otherwise, and for as long as it
+    // did the larger of the two layers was billed at full price on every call. See
+    // userContent() for the second breakpoint.
     system: [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }],
-    messages: [{ role: "user", content: req.input }],
+    messages: [{ role: "user", content: userContent(req) }],
     output_config: { format: betaZodOutputFormat(req.schema) },
   });
 
@@ -175,9 +202,11 @@ export const complete: CompleteFn = async <T>(req: CompleteRequest<T>): Promise<
 export async function countInputTokens<T>(req: CompleteRequest<T>): Promise<number> {
   const res = await getClient().beta.messages.countTokens({
     model: req.model,
-    thinking: { type: "adaptive" },
+    // Same gate as complete(): counting with adaptive thinking on a model that does
+    // not support it is the same 400 the real call would get.
+    ...(supportsAdaptiveThinking(req.model) ? { thinking: { type: "adaptive" as const } } : {}),
     system: [{ type: "text", text: req.system }],
-    messages: [{ role: "user", content: req.input }],
+    messages: [{ role: "user", content: userContent(req) }],
     output_config: { format: betaZodOutputFormat(req.schema) },
   });
   return res.input_tokens;

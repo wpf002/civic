@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { extractOnce, reconcile } from "./pipeline.js";
-import type { CompleteFn } from "./llm.js";
+import { extractOnce, reconcile, renderInput } from "./pipeline.js";
+import type { CompleteFn, CompleteRequest } from "./llm.js";
 
 const DOC = "I will vote to legalize fourplexes citywide. On policing, I have not taken a position.";
 
@@ -128,5 +128,49 @@ describe("reconcile", () => {
     const r = reconcile(outcome([p("guns", "SUPPORT", 0.9)]), outcome([]));
     expect(r.flagged[0]).toMatchObject({ issueSlug: "guns" });
     expect(r.flagged[0]?.b).toBeUndefined();
+  });
+});
+
+describe("prompt caching", () => {
+  const input = {
+    sourceText: "I will vote to legalize fourplexes citywide.",
+    issueSlugs: ["housing-cost-of-living", "taxes-budget"],
+    propositions: [
+      { issueSlug: "housing-cost-of-living", text: "Allow more homes?", yesMeans: "yes", noMeans: "no" },
+      { issueSlug: "taxes-budget", text: "Raise taxes?", yesMeans: "yes", noMeans: "no" },
+    ],
+  };
+
+  it("sends the model exactly the text it always did, split at the cache boundary", async () => {
+    let seen: CompleteRequest<unknown> | undefined;
+    const capture = (async (req: CompleteRequest<unknown>) => {
+      seen = req;
+      return { model: "recorded", output: { positions: [] }, costCents: 0 };
+    }) as unknown as CompleteFn;
+
+    await extractOnce(input, "recorded", capture);
+
+    // Caching must not change what the model reads — only how it is billed.
+    expect((seen!.cachedInput ?? "") + seen!.input).toBe(renderInput(input));
+    // The repeated part is before the breakpoint; the document is after it.
+    expect(seen!.cachedInput).toMatch(/^PROPOSITIONS:/);
+    expect(seen!.cachedInput).not.toContain(input.sourceText);
+    expect(seen!.input).toContain(input.sourceText);
+  });
+
+  it("gives two sources at the same level a byte-identical cached block", async () => {
+    const blocks: string[] = [];
+    const capture = (async (req: CompleteRequest<unknown>) => {
+      blocks.push(req.cachedInput ?? "");
+      return { model: "recorded", output: { positions: [] }, costCents: 0 };
+    }) as unknown as CompleteFn;
+
+    await extractOnce(input, "recorded", capture);
+    await extractOnce({ ...input, sourceText: "A completely different document." }, "recorded", capture);
+
+    // A cache hit needs the prefix to match byte for byte. If the document ever
+    // leaked into this block, every source would write its own entry and none
+    // would be read.
+    expect(blocks[0]).toBe(blocks[1]);
   });
 });

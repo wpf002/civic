@@ -38,6 +38,16 @@ export interface ExtractOutcome {
 
 /** Show the model the actual question, not the topic name. */
 export function renderInput(input: ExtractInput): string {
+  return renderPropositions(input) + renderDocument(input);
+}
+
+/**
+ * The stable half of the user turn. Identical for every source at the same
+ * jurisdiction level, so it is sent behind a cache breakpoint. Must stay
+ * deterministic — issues arrive ordered by sortOrder, and any change in order or
+ * wording here produces a different prefix and a cache miss on every call.
+ */
+export function renderPropositions(input: ExtractInput): string {
   const list = input.propositions?.length
     ? input.propositions
         .map(
@@ -48,7 +58,12 @@ export function renderInput(input: ExtractInput): string {
         .join("\n\n")
     : input.issueSlugs.map((s, i) => `${i + 1}. issueSlug: ${s}`).join("\n");
 
-  return `PROPOSITIONS:\n${list}\n\nDOCUMENT:\n${input.sourceText}`;
+  return `PROPOSITIONS:\n${list}\n\n`;
+}
+
+/** The half that varies per source. Goes after the breakpoint. */
+export function renderDocument(input: ExtractInput): string {
+  return `DOCUMENT:\n${input.sourceText}`;
 }
 
 /**
@@ -63,7 +78,10 @@ export async function extractOnce(
   const res = await fn({
     model,
     system: EXTRACT_SYSTEM,
-    input: renderInput(input),
+    // Same text renderInput produces, split at the boundary between what repeats
+    // (propositions) and what does not (the document) so the repeat is cached.
+    cachedInput: renderPropositions(input),
+    input: renderDocument(input),
     schema: LenientExtractionOutputSchema,
   });
 
