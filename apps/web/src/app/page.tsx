@@ -2,6 +2,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { fmtDate } from "@/components/evidence";
 import { SiteFooter, Wordmark } from "@/components/record";
+import { pageCount, pageHref, pageNumber, pageSlice } from "@/lib/paging";
 import type { ElectionSummary } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +18,12 @@ const FRAME = [
   "If a candidate hasn't said, we say so.",
 ];
 
-export default async function Home() {
+export default async function Home({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   const elections = await api<ElectionSummary[]>("/v1/elections").catch(() => []);
+  const { page: rawPage } = await searchParams;
+  const page = pageNumber(rawPage, elections.length);
+  const pages = pageCount(elections.length);
+  const { from, shown } = pageSlice(elections, page);
 
   return (
     <div className="mx-auto max-w-2xl px-5">
@@ -72,7 +77,7 @@ export default async function Home() {
             </p>
           ) : (
             <ul>
-              {elections.map((e) => (
+              {shown.map((e) => (
                 <li key={e.slug} className="record">
                   <Link href={`/e/${e.slug}`} className="group block">
                     <div className="flex items-baseline justify-between gap-4">
@@ -83,13 +88,40 @@ export default async function Home() {
                     </div>
                     <p className="mono mt-2">{fmtDate(e.electionDate)}</p>
                     <p className="mono mt-1 !normal-case !tracking-normal">
-                      {e.counts.races} races · {e.counts.candidates} candidates ·{" "}
-                      {e.counts.stated} stated positions · {e.counts.silent} with none
+                      {e.counts.races} races · {e.counts.candidates} candidates · {e.counts.stated}{" "}
+                      stated positions · {e.counts.silent} with none
                     </p>
                   </Link>
                 </li>
               ))}
             </ul>
+          )}
+
+          {pages > 1 && (
+            // Paging is in the URL, so a page can be linked, bookmarked and read
+            // without JavaScript. The ends are plain text rather than dead links.
+            <nav
+              aria-label="Elections pages"
+              className="mt-6 flex items-baseline justify-between gap-4"
+            >
+              {page > 1 ? (
+                <Link href={pageHref(page - 1)} rel="prev" className="mono !text-ink underline">
+                  ‹ Previous
+                </Link>
+              ) : (
+                <span className="mono">‹ Previous</span>
+              )}
+              <p className="mono !normal-case !tracking-normal">
+                Elections {from + 1}–{from + shown.length} of {elections.length}
+              </p>
+              {page < pages ? (
+                <Link href={pageHref(page + 1)} rel="next" className="mono !text-ink underline">
+                  Next ›
+                </Link>
+              ) : (
+                <span className="mono">Next ›</span>
+              )}
+            </nav>
           )}
         </section>
       </main>

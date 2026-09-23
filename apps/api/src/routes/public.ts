@@ -302,7 +302,6 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
       orderBy: { electionDate: "asc" },
     });
     const out = [];
-    const unlisted: string[] = [];
     for (const e of elections) {
       const where = { race: { electionId: e.id } };
       const [candidates, races, positions, silent] = await Promise.all([
